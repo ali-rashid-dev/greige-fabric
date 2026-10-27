@@ -175,7 +175,15 @@ export default function ExpensesManagement() {
             className={view === item.key ? "secondary-button active-tab" : "secondary-button"}
             role="tab"
             aria-selected={view === item.key}
-            onClick={() => setView(item.key)}
+            onClick={() => {
+              setView(item.key);
+              if (item.key === "daily") {
+                const dailyRange = { from: dailyDate, to: dailyDate };
+                setRange(dailyRange);
+              } else if (view === "daily") {
+                setRange(rangeInput);
+              }
+            }}
           >
             {item.label}
           </button>
@@ -246,9 +254,9 @@ export default function ExpensesManagement() {
 
       {view === "history" && (
         <section className="panel">
-          <header className="panel-heading"><div><h2>Expense history</h2><p>{loading ? "Loading…" : `${expenses.length} expenses · ${formatMoney(expenses.reduce((sum, expense) => sum + expense.amountMinor, 0))}`}</p></div></header>
+          <header className="panel-heading"><div><h2>Expense history</h2><p>{loading ? "Loading…" : `${expenses.filter((expense) => !expense.isReversed).length} active expenses · ${formatMoney(expenses.reduce((sum, expense) => sum + (expense.isReversed ? 0 : expense.amountMinor), 0))}`}</p></div></header>
           <div className="table-scroll"><table><thead><tr><th>Date</th><th>Expense</th><th>Category</th><th>Payment account</th><th className="numeric">Amount</th></tr></thead>
-            <tbody>{expenses.map((expense) => <tr key={expense.id}><td>{formatDate(expense.expenseDate)}</td><td><strong>{expense.expenseNumber}</strong><small>{expense.description}</small></td><td>{expense.categoryName}</td><td>{expense.paymentAccountName}</td><td className="numeric">{formatMoney(expense.amountMinor)}</td></tr>)}</tbody>
+            <tbody>{expenses.map((expense) => <tr key={expense.id}><td>{formatDate(expense.expenseDate)}</td><td><strong>{expense.expenseNumber}{expense.isReversed ? " · Reversed" : ""}</strong><small>{expense.description}</small></td><td>{expense.categoryName}</td><td>{expense.paymentAccountName}</td><td className="numeric">{formatMoney(expense.amountMinor)}</td></tr>)}</tbody>
           </table>{!loading && expenses.length === 0 && <p className="empty-state">No expenses in this date range.</p>}</div>
         </section>
       )}

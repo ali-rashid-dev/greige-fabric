@@ -284,7 +284,13 @@ export function registerIpcHandlers(
   );
   registerHandler(
     channels.accountingClosePeriod, accounting, developmentUrl, productionFileUrl,
-    accountingClosePeriodSchema, (service, input) => service.closePeriod(input.id),
+    accountingClosePeriodSchema, async (service, input) => {
+      const { ownerPin, id } = input;
+      if (!await ownerAuth.verifyPin(ownerPin)) {
+        throw new FabricServiceError("AUTHORIZATION", "The owner PIN is incorrect.");
+      }
+      return service.closePeriod(id);
+    },
   );
   registerHandler(
     channels.accountingTrialBalance, accounting, developmentUrl, productionFileUrl,
@@ -304,15 +310,33 @@ export function registerIpcHandlers(
   );
   registerHandler(
     channels.accountingPostEntry, accounting, developmentUrl, productionFileUrl,
-    accountingManualEntrySchema, (service, input) => service.postEntry(input),
+    accountingManualEntrySchema, async (service, input) => {
+      const { ownerPin, ...entry } = input;
+      if (!await ownerAuth.verifyPin(ownerPin)) {
+        throw new FabricServiceError("AUTHORIZATION", "The owner PIN is incorrect.");
+      }
+      return service.postEntry(entry);
+    },
   );
   registerHandler(
     channels.accountingOpeningBalances, accounting, developmentUrl, productionFileUrl,
-    accountingOpeningBalancesSchema, (service, input) => service.postOpeningBalances(input),
+    accountingOpeningBalancesSchema, async (service, input) => {
+      const { ownerPin, ...openingBalances } = input;
+      if (!await ownerAuth.verifyPin(ownerPin)) {
+        throw new FabricServiceError("AUTHORIZATION", "The owner PIN is incorrect.");
+      }
+      return service.postOpeningBalances(openingBalances);
+    },
   );
   registerHandler(
     channels.accountingReverseEntry, accounting, developmentUrl, productionFileUrl,
-    accountingEntryReversalSchema, (service, input) => service.reverseEntry(input.id, input.reason),
+    accountingEntryReversalSchema, async (service, input) => {
+      const { ownerPin, id, reason } = input;
+      if (!await ownerAuth.verifyPin(ownerPin)) {
+        throw new FabricServiceError("AUTHORIZATION", "The owner PIN is incorrect.");
+      }
+      return service.reverseEntry(id, reason);
+    },
   );
   registerHandler(
     channels.accountingReconcile, accounting, developmentUrl, productionFileUrl,

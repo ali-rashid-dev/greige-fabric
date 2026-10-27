@@ -181,6 +181,14 @@ export function postJournal(
       if (line.supplierId && line.accountCode !== "2100") {
         throw new FabricServiceError("VALIDATION", "Supplier subledger references require the payable account.");
       }
+      if (transactionType === "manual_journal" || transactionType === "opening_balance") {
+        if ((line.accountCode === "1300" || line.accountCode === "2200") && !line.customerId) {
+          throw new FabricServiceError("VALIDATION", "Receivable and customer-advance lines require a customer.");
+        }
+        if (line.accountCode === "2100" && !line.supplierId) {
+          throw new FabricServiceError("VALIDATION", "Payable lines require a supplier.");
+        }
+      }
     }
 
     const transactionId = randomUUID();
@@ -214,6 +222,13 @@ export function postJournal(
 }
 
 function requireOpenPeriod(database: Database.Database, date: string): string {
+  const latestClosed = database.prepare(`
+    SELECT ends_on FROM accounting_periods
+    WHERE status = 'closed' ORDER BY ends_on DESC LIMIT 1
+  `).get() as { ends_on: string } | undefined;
+  if (latestClosed && date <= latestClosed.ends_on) {
+    throw new FabricServiceError("CONFLICT", "The journal date is on or before the latest closed accounting period.");
+  }
   const existing = database.prepare(`
     SELECT id, status FROM accounting_periods WHERE starts_on <= ? AND ends_on >= ?
   `).get(date, date) as { id: string; status: "open" | "closed" } | undefined;
@@ -259,13 +274,23 @@ export class AccountingService {
     if (input.isPaymentAccount && input.accountType !== "asset") {
       throw new FabricServiceError("VALIDATION", "Only asset accounts can be configured as payment accounts.");
     }
-    this.database.prepare(`
-      INSERT INTO ledger_accounts (code, name, account_type, is_payment_account, normal_balance)
-      VALUES (?, ?, ?, ?, ?)
-    `).run(
-      input.code, input.name, input.accountType, input.isPaymentAccount ? 1 : 0,
-      normalBalanceByType[input.accountType],
-    );
+    try {
+      this.database.prepare(`
+        INSERT INTO ledger_accounts (code, name, account_type, is_payment_account, normal_balance)
+        VALUES (?, ?, ?, ?, ?)
+      `).run(
+        input.code, input.name, input.accountType, input.isPaymentAccount ? 1 : 0,
+        normalBalanceByType[input.accountType],
+      );
+    } catch (error) {
+      if (
+        error instanceof Error && "code" in error
+        && (error.code === "SQLITE_CONSTRAINT_UNIQUE" || error.code === "SQLITE_CONSTRAINT_PRIMARYKEY")
+      ) {
+        throw new FabricServiceError("CONFLICT", "A ledger account with this code already exists.");
+      }
+      throw error;
+    }
     const account = this.database.prepare(`
       SELECT code, name, account_type, normal_balance, is_payment_account
       FROM ledger_accounts WHERE code = ?
@@ -311,13 +336,22 @@ export class AccountingService {
   }
 
   closePeriod(id: string): AccountingPeriod {
+    const period = this.database.prepare(`
+      SELECT id, starts_on FROM accounting_periods WHERE id = ?
+    `).get(id) as { id: string; starts_on: string } | undefined;
+    if (!period) throw new FabricServiceError("NOT_FOUND", "Accounting period not found.");
+    const earlierOpenPeriod = this.database.prepare(`
+      SELECT id FROM accounting_periods
+      WHERE starts_on < ? AND status = 'open' LIMIT 1
+    `).get(period.starts_on);
+    if (earlierOpenPeriod) {
+      throw new FabricServiceError("CONFLICT", "Close earlier open accounting periods first.");
+    }
     const result = this.database.prepare(`
       UPDATE accounting_periods SET status = 'closed'
       WHERE id = ? AND status = 'open'
     `).run(id);
     if (result.changes === 0) {
-      const exists = this.database.prepare("SELECT id FROM accounting_periods WHERE id = ?").get(id);
-      if (!exists) throw new FabricServiceError("NOT_FOUND", "Accounting period not found.");
       throw new FabricServiceError("CONFLICT", "This accounting period is already closed.");
     }
     return this.listPeriods().find((period) => period.id === id)!;
@@ -498,6 +532,12 @@ export class AccountingService {
       reversal_of_transaction_id: string | null;
     } | undefined;
     if (!original) throw new FabricServiceError("NOT_FOUND", "Journal entry not found.");
+    if (original.transaction_type !== "manual_journal" && original.transaction_type !== "opening_balance") {
+      throw new FabricServiceError(
+        "CONFLICT",
+        "Reverse the source transaction through its domain service.",
+      );
+    }
     if (original.reversal_of_transaction_id) {
       throw new FabricServiceError("CONFLICT", "A reversal entry cannot itself be reversed.");
     }

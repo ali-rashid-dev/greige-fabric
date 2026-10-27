@@ -350,6 +350,7 @@ export const accountingUpdateAccountSchema = z.object({
 
 export const accountingClosePeriodSchema = z.object({
   id: z.string().trim().min(1).max(80),
+  ownerPin: z.string().min(6).max(64).regex(/^\d+$/, "PIN must contain digits only"),
 });
 
 export const accountingTrialBalanceSchema = z.object({
@@ -376,9 +377,11 @@ export const accountingEntryIdSchema = z.object({
 export const accountingEntryReversalSchema = z.object({
   id: z.string().uuid(),
   reason: z.string().trim().min(1).max(160),
+  ownerPin: z.string().min(6).max(64).regex(/^\d+$/, "PIN must contain digits only"),
 });
 
 export const accountingManualEntrySchema = z.object({
+  ownerPin: z.string().min(6).max(64).regex(/^\d+$/, "PIN must contain digits only"),
   sourceId: accountingJournalFields.sourceId,
   reference: z.string().trim().min(1).max(120),
   date: accountingJournalFields.date,
@@ -386,6 +389,7 @@ export const accountingManualEntrySchema = z.object({
 }).superRefine(requireBalancedJournal);
 
 export const accountingOpeningBalancesSchema = z.object({
+  ownerPin: z.string().min(6).max(64).regex(/^\d+$/, "PIN must contain digits only"),
   sourceId: accountingJournalFields.sourceId,
   date: accountingJournalFields.date,
   lines: accountingJournalFields.lines,
@@ -453,6 +457,8 @@ export type AccountingGeneralLedgerInput = z.infer<typeof accountingGeneralLedge
 export type AccountingEntryListInput = z.input<typeof accountingEntryListSchema>;
 export type AccountingManualEntryInput = z.infer<typeof accountingManualEntrySchema>;
 export type AccountingOpeningBalancesInput = z.infer<typeof accountingOpeningBalancesSchema>;
+export type AccountingClosePeriodInput = z.infer<typeof accountingClosePeriodSchema>;
+export type AccountingEntryReversalInput = z.infer<typeof accountingEntryReversalSchema>;
 export type ExpenseInput = z.infer<typeof expenseInputSchema>;
 export type ExpenseCategoryInput = z.infer<typeof expenseCategoryInputSchema>;
 export type ExpenseRangeInput = z.infer<typeof expenseRangeSchema>;

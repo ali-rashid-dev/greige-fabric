@@ -17,6 +17,7 @@ interface ExpenseRow {
   expense_date: string;
   description: string;
   created_at: string;
+  is_reversed: number;
 }
 
 export class ExpenseService {
@@ -146,11 +147,13 @@ export class ExpenseService {
         ON t.source_key = 'expense:' || e.id AND t.transaction_type = 'expense'
       LEFT JOIN ledger_transactions reversal
         ON reversal.reversal_of_transaction_id = t.id
+        AND substr(reversal.created_at, 1, 10) >= ?
+        AND substr(reversal.created_at, 1, 10) <= ?
       LEFT JOIN ledger_postings p
         ON p.transaction_id IN (t.id, reversal.id) AND p.account_code = a.code
       WHERE c.active = 1
       GROUP BY c.code ORDER BY c.name COLLATE NOCASE
-    `).all(input.from, input.to) as Array<{
+    `).all(input.from, input.to, input.from, input.to) as Array<{
       category_code: string;
       category_name: string;
       expense_account_code: string;
@@ -177,7 +180,12 @@ export class ExpenseService {
       SELECT e.id, e.expense_number, e.category_code, c.name AS category_name,
         c.account_code AS expense_account_code, e.payment_account_code,
         p.name AS payment_account_name, e.amount_minor, e.expense_date,
-        e.description, e.created_at
+        e.description, e.created_at,
+        EXISTS (
+          SELECT 1 FROM ledger_transactions t
+          JOIN ledger_transactions reversal ON reversal.reversal_of_transaction_id = t.id
+          WHERE t.source_key = 'expense:' || e.id AND t.transaction_type = 'expense'
+        ) AS is_reversed
       FROM expenses e
       JOIN expense_categories c ON c.code = e.category_code
       JOIN ledger_accounts p ON p.code = e.payment_account_code
@@ -192,7 +200,12 @@ export class ExpenseService {
       SELECT e.id, e.expense_number, e.category_code, c.name AS category_name,
         c.account_code AS expense_account_code, e.payment_account_code,
         p.name AS payment_account_name, e.amount_minor, e.expense_date,
-        e.description, e.created_at
+        e.description, e.created_at,
+        EXISTS (
+          SELECT 1 FROM ledger_transactions t
+          JOIN ledger_transactions reversal ON reversal.reversal_of_transaction_id = t.id
+          WHERE t.source_key = 'expense:' || e.id AND t.transaction_type = 'expense'
+        ) AS is_reversed
       FROM expenses e
       JOIN expense_categories c ON c.code = e.category_code
       JOIN ledger_accounts p ON p.code = e.payment_account_code
@@ -214,6 +227,7 @@ export class ExpenseService {
       expenseDate: row.expense_date,
       description: row.description,
       createdAt: row.created_at,
+      isReversed: row.is_reversed === 1,
     };
   }
 }

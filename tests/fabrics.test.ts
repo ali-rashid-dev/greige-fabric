@@ -1,7 +1,7 @@
 import { copyFile, mkdir, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { openDatabase } from "../src/main/database";
 import { FabricService, FabricServiceError } from "../src/main/services/fabrics";
 import { InventoryService } from "../src/main/services/inventory";
@@ -18,6 +18,10 @@ import {
   supplierPaymentSchema,
   customerInputSchema,
   customerReceiptSchema,
+  accountingClosePeriodSchema,
+  accountingEntryReversalSchema,
+  accountingManualEntrySchema,
+  accountingOpeningBalancesSchema,
 } from "../src/shared/contracts";
 
 const migrationsDirectory = path.resolve("database/migrations");
@@ -67,8 +71,34 @@ const sampleFabric = {
 };
 
 describe("fabric quality catalog", () => {
+  it("requires owner PINs for accounting write contracts", () => {
+    const journalLines = [
+      { accountCode: "1000", debitMinor: 100 },
+      { accountCode: "3000", creditMinor: 100 },
+    ];
+    expect(accountingManualEntrySchema.safeParse({
+      sourceId: "owner-pin-test",
+      reference: "OWNER-PIN-TEST",
+      date: "2026-10-27",
+      lines: journalLines,
+    }).success).toBe(false);
+    expect(accountingOpeningBalancesSchema.safeParse({
+      sourceId: "owner-pin-test",
+      date: "2026-10-27",
+      lines: journalLines,
+    }).success).toBe(false);
+    expect(accountingEntryReversalSchema.safeParse({
+      id: "00000000-0000-4000-8000-000000000001",
+      reason: "Correction",
+    }).success).toBe(false);
+    expect(accountingClosePeriodSchema.safeParse({ id: "2026-10" }).success).toBe(false);
+    expect(accountingClosePeriodSchema.safeParse({ id: "2026-10", ownerPin: "123456" }).success).toBe(true);
+  });
+
   it("balances purchases, sales, receipts and expenses in accounting reports", async () => {
     const { database, service, inventory, suppliers, customers, accounting, close } = await createService();
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-10-27T12:00:00.000Z"));
     try {
       const fabric = service.create(fabricInputSchema.parse(sampleFabric));
       const openingEntry = accounting.postOpeningBalances({
@@ -147,6 +177,32 @@ describe("fabric quality catalog", () => {
           { accountCode: "1000", creditMinor: 10_000 },
         ],
       })).toThrow();
+      expect(() => accounting.postEntry({
+        sourceId: "unlinked-receivable",
+        reference: "NO-CUSTOMER",
+        date: "2026-10-27",
+        lines: [
+          { accountCode: "1300", debitMinor: 100 },
+          { accountCode: "1000", creditMinor: 100 },
+        ],
+      })).toThrow(/require a customer/);
+      expect(() => accounting.postEntry({
+        sourceId: "unlinked-advance",
+        reference: "NO-ADVANCE-CUSTOMER",
+        date: "2026-10-27",
+        lines: [
+          { accountCode: "2200", creditMinor: 100 },
+          { accountCode: "1000", debitMinor: 100 },
+        ],
+      })).toThrow(/require a customer/);
+      expect(() => accounting.postOpeningBalances({
+        sourceId: "unlinked-payable",
+        date: "2026-10-27",
+        lines: [
+          { accountCode: "2100", creditMinor: 100 },
+          { accountCode: "3000", debitMinor: 100 },
+        ],
+      })).toThrow(/require a supplier/);
 
       const trialBalance = accounting.trialBalance("2026-10-27");
       expect(trialBalance.isBalanced).toBe(true);
@@ -179,10 +235,25 @@ describe("fabric quality catalog", () => {
       });
       expect(accounting.getEntry(expenseEntry.id).reversedByTransactionId).toBe(reversal.id);
       expect(() => accounting.reverseEntry(expenseEntry.id, "Duplicate reversal")).toThrow();
+      const sourceSale = accounting.listEntries().find((entry) => entry.transactionType === "sale");
+      expect(sourceSale).toBeDefined();
+      expect(() => accounting.reverseEntry(sourceSale!.id, "Try direct sale reversal"))
+        .toThrow(/source transaction through its domain service/);
       expect(accounting.trialBalance("2026-10-27").isBalanced).toBe(true);
 
       const period = accounting.listPeriods().find((item) => item.startsOn <= "2026-10-27" && item.endsOn >= "2026-10-27");
       expect(period?.status).toBe("open");
+      accounting.postEntry({
+        sourceId: "september-journal",
+        reference: "SEP-ENTRY",
+        date: "2026-09-10",
+        lines: [
+          { accountCode: "5800", debitMinor: 100 },
+          { accountCode: "1000", creditMinor: 100 },
+        ],
+      });
+      expect(() => accounting.closePeriod(period!.id)).toThrow(/earlier open accounting periods/);
+      accounting.closePeriod("2026-09");
       accounting.closePeriod(period!.id);
       const invoicesBeforeClosedPeriodSale = service.listInvoices().length;
       const stockBeforeClosedPeriodSale = service.get(fabric.id).fabric.stockMm;
@@ -202,7 +273,35 @@ describe("fabric quality catalog", () => {
           { accountCode: "1000", creditMinor: 100 },
         ],
       })).toThrow(/closed/);
+      expect(() => accounting.postEntry({
+        sourceId: "before-latest-closed",
+        reference: "BEFORE-CLOSED",
+        date: "2026-09-01",
+        lines: [
+          { accountCode: "5800", debitMinor: 100 },
+          { accountCode: "1000", creditMinor: 100 },
+        ],
+      })).toThrow(/on or before the latest closed/);
+      expect(() => accounting.postEntry({
+        sourceId: "duplicate-accounting-code",
+        reference: "DUP-ACCOUNT",
+        date: "2026-11-01",
+        lines: [
+          { accountCode: "5800", debitMinor: 100 },
+          { accountCode: "1000", creditMinor: 100 },
+        ],
+      })).not.toThrow();
+      expect(() => accounting.createAccount({
+        code: "5800",
+        name: "Duplicate account",
+        accountType: "expense",
+        isPaymentAccount: false,
+      })).toThrowError(new FabricServiceError(
+        "CONFLICT",
+        "A ledger account with this code already exists.",
+      ));
     } finally {
+      vi.useRealTimers();
       close();
     }
   });
@@ -255,6 +354,32 @@ describe("fabric quality catalog", () => {
           expenseCount: 1,
         })]),
       });
+      const originalExpenseTransaction = database.prepare(
+        "SELECT id FROM ledger_transactions WHERE source_key = ?",
+      ).get(`expense:${expense.id}`) as { id: string };
+      database.prepare(`
+        INSERT INTO ledger_transactions (
+          id, transaction_type, reference, authorized_user, created_at,
+          source_key, reversal_of_transaction_id, reversal_reason, period_id
+        ) VALUES (
+          'expense-reversal', 'reversal', ?, 'Test', '2026-10-28T12:00:00.000Z',
+          ?, ?, 'Test reversal', '2026-10'
+        )
+      `).run(
+        expense.expenseNumber,
+        `reversal:${expense.id}`,
+        originalExpenseTransaction.id,
+      );
+      database.prepare(`
+        INSERT INTO ledger_postings (
+          id, transaction_id, account_code, debit_minor, credit_minor
+        ) VALUES
+          ('expense-reversal-expense', 'expense-reversal', '5200', 0, 200000),
+          ('expense-reversal-cash', 'expense-reversal', '1000', 200000, 0)
+      `).run();
+      expect(expenses.list({ from: "2026-10-27", to: "2026-10-27" })[0].isReversed).toBe(true);
+      expect(expenses.report({ from: "2026-10-27", to: "2026-10-27" }).totalMinor).toBe(200_000);
+      expect(expenses.report({ from: "2026-10-27", to: "2026-10-28" }).totalMinor).toBe(0);
       expect(() => expenses.record({
         categoryCode: "rent",
         paymentAccountCode: "1300",
@@ -267,16 +392,6 @@ describe("fabric quality catalog", () => {
         WHERE transaction_type = 'expense' AND source_key = ?
       `).get(`expense:${expense.id}`)).toMatchObject({ count: 1 });
       expect(accounting.trialBalance("2026-10-27").isBalanced).toBe(true);
-
-      const expenseEntry = accounting.listEntries().find((entry) => entry.reference === expense.expenseNumber);
-      expect(expenseEntry).toBeDefined();
-      accounting.reverseEntry(expenseEntry!.id, "Expense entered in error");
-      expect(expenses.report({ from: "2026-10-27", to: "2026-10-27" }).totalMinor).toBe(0);
-      expect(accounting.generalLedger({
-        accountCode: "1000",
-        from: "2026-10-27",
-        to: "2026-10-27",
-      }).closingBalanceMinor).toBe(1_000_000);
 
       const category = expenses.addCategory({ code: "repairs", name: "Repairs and maintenance" });
       expect(category).toMatchObject({ code: "repairs", name: "Repairs and maintenance" });
@@ -1163,6 +1278,45 @@ describe("fabric quality catalog", () => {
       `).get() as { value: number };
       expect(ledgerInventory.value).toBe(108750);
       expect((await readdir(directory)).filter((name) => name.endsWith(".bak"))).toHaveLength(1);
+    } finally {
+      database.close();
+    }
+  });
+
+  it("uses unused expense accounts when migration codes already belong to user accounts", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "greige-expense-migration-"));
+    temporaryDirectories.push(directory);
+    const oldMigrations = path.join(directory, "old-migrations");
+    await mkdir(oldMigrations);
+    for (const name of (await readdir(migrationsDirectory)).filter((entry) => entry < "010_expenses.sql")) {
+      await copyFile(path.join(migrationsDirectory, name), path.join(oldMigrations, name));
+    }
+
+    const databasePath = path.join(directory, "existing-pos.sqlite");
+    let database = await openDatabase(databasePath, oldMigrations);
+    database.prepare(`
+      INSERT INTO ledger_accounts (code, name, account_type, normal_balance)
+      VALUES ('5200', 'User asset account', 'asset', 'debit'),
+        ('5400', 'User expense account', 'expense', 'debit')
+    `).run();
+    database.close();
+
+    database = await openDatabase(databasePath, migrationsDirectory);
+    try {
+      expect(database.prepare("SELECT name, account_type FROM ledger_accounts WHERE code = '5200'")
+        .get()).toEqual({ name: "User asset account", account_type: "asset" });
+      expect(database.prepare("SELECT name, account_type FROM ledger_accounts WHERE code = '5400'")
+        .get()).toEqual({ name: "User expense account", account_type: "expense" });
+      expect(database.prepare(`
+        SELECT c.code, c.account_code, a.account_type
+        FROM expense_categories c
+        JOIN ledger_accounts a ON a.code = c.account_code
+        WHERE c.code IN ('rent', 'transport')
+        ORDER BY c.code
+      `).all()).toEqual([
+        { code: "rent", account_code: expect.not.stringMatching(/^5200$/), account_type: "expense" },
+        { code: "transport", account_code: expect.not.stringMatching(/^5400$/), account_type: "expense" },
+      ]);
     } finally {
       database.close();
     }

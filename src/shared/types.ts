@@ -6,7 +6,9 @@ import type {
   CustomerReceiptInput,
   CustomerStatementInput,
   AccountingCreateAccountInput,
+  AccountingClosePeriodInput,
   AccountingEntryListInput,
+  AccountingEntryReversalInput,
   AccountingGeneralLedgerInput,
   AccountingManualEntryInput,
   AccountingOpeningBalancesInput,
@@ -298,6 +300,7 @@ export interface Expense {
   expenseDate: string;
   description: string;
   createdAt: string;
+  isReversed: boolean;
 }
 
 export interface ExpenseCategoryReportLine {
@@ -450,14 +453,14 @@ export interface DesktopApi {
     createAccount(input: AccountingCreateAccountInput): Promise<IpcResult<ChartOfAccount>>;
     updateAccount(input: AccountingUpdateAccountInput): Promise<IpcResult<ChartOfAccount>>;
     periods(): Promise<IpcResult<AccountingPeriod[]>>;
-    closePeriod(input: { id: string }): Promise<IpcResult<AccountingPeriod>>;
+    closePeriod(input: AccountingClosePeriodInput): Promise<IpcResult<AccountingPeriod>>;
     trialBalance(input: AccountingTrialBalanceInput): Promise<IpcResult<TrialBalance>>;
     generalLedger(input: AccountingGeneralLedgerInput): Promise<IpcResult<GeneralLedger>>;
     entries(input?: AccountingEntryListInput): Promise<IpcResult<JournalEntry[]>>;
     entry(input: { id: string }): Promise<IpcResult<JournalEntry>>;
     postEntry(input: AccountingManualEntryInput): Promise<IpcResult<JournalEntry>>;
     openingBalances(input: AccountingOpeningBalancesInput): Promise<IpcResult<JournalEntry>>;
-    reverseEntry(input: { id: string; reason: string }): Promise<IpcResult<JournalEntry>>;
+    reverseEntry(input: AccountingEntryReversalInput): Promise<IpcResult<JournalEntry>>;
     reconcile(): Promise<IpcResult<AccountingReconciliation>>;
   };
   expenses: {
