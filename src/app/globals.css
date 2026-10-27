@@ -354,6 +354,11 @@ button:disabled {
   color: #9aa39c;
 }
 
+.search-field:focus-within {
+  border-color: #99b5a0;
+  box-shadow: 0 0 0 2px rgb(86 125 104 / 10%);
+}
+
 .search-field > span {
   font-size: 20px;
   line-height: 1;
@@ -1118,8 +1123,7 @@ td {
     margin: 0 0 25px;
   }
 
-  .brand > div:last-child,
-  .nav-item:not(.active) {
+  .brand > div:last-child {
     display: none;
   }
 

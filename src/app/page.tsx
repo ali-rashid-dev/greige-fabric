@@ -153,12 +153,20 @@ export default function Home() {
     setError("");
   }
 
+  function openAdjustment(fabric: Fabric) {
+    setAdjustment(fabric);
+    setAdjustmentDirection("add");
+    setAdjustmentQuantity("");
+    setAdjustmentReason("");
+    setError("");
+  }
+
   async function saveFabric(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setSaving(true);
     setError("");
     try {
-      const input = fabricInputSchema.parse({
+      const parsed = fabricInputSchema.safeParse({
         ...formValues,
         widthInches: Number(formValues.widthInches),
         gsm: Number(formValues.gsm),
@@ -166,6 +174,10 @@ export default function Home() {
         sellingRate: Number(formValues.sellingRate),
         reorderThresholdMeters: Number(formValues.reorderThresholdMeters),
       });
+      if (!parsed.success) {
+        throw new Error(parsed.error.issues[0]?.message ?? "Enter valid fabric details.");
+      }
+      const input = parsed.data;
       const result = editing
         ? await getDesktopApi().fabrics.update({ ...input, id: editing.id })
         : await getDesktopApi().fabrics.create(input);
@@ -337,7 +349,7 @@ export default function Home() {
                     <option value="low-stock">Low stock</option>
                   </select>
                 </div>
-                <FabricTable fabrics={fabrics} loading={loading} onDetails={openDetails} onEdit={openEditForm} onAdjust={(fabric) => setAdjustment(fabric)} />
+                <FabricTable fabrics={fabrics} loading={loading} onDetails={openDetails} onEdit={openEditForm} onAdjust={openAdjustment} />
               </div>
             </>
           )}
@@ -353,7 +365,7 @@ export default function Home() {
                 <div><h2>Stock by fabric</h2><p>Quantities are tracked in metres.</p></div>
               </div>
               <div className="panel">
-                <FabricTable fabrics={stock?.fabrics ?? []} loading={loading} stockView onDetails={openDetails} onEdit={openEditForm} onAdjust={(fabric) => setAdjustment(fabric)} />
+                <FabricTable fabrics={stock?.fabrics ?? []} loading={loading} stockView onDetails={openDetails} onEdit={openEditForm} onAdjust={openAdjustment} />
               </div>
             </>
           )}
