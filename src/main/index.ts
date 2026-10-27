@@ -12,10 +12,12 @@ import { AccountingService } from "./services/accounting";
 import { ExpenseService } from "./services/expenses";
 import { ReportsService } from "./services/reports";
 import { ReturnsService } from "./services/returns";
+import { BackupService } from "./services/backups";
 
-const developmentUrl = process.env.DESKTOP_DEV_URL;
+const developmentUrl = app.isPackaged ? undefined : process.env.DESKTOP_DEV_URL;
 let mainWindow: BrowserWindow | null = null;
 let database: Awaited<ReturnType<typeof openDatabase>> | null = null;
+let backupTimer: NodeJS.Timeout | null = null;
 
 function getRendererPath(): string {
   return path.join(app.getAppPath(), "out", "index.html");
@@ -119,10 +121,18 @@ app.whenReady().then(async () => {
   installSecurityPolicy();
   try {
     const databasePath = path.join(app.getPath("userData"), "greige-fabric-pos.sqlite");
+    const userDataDirectory = app.getPath("userData");
+    await BackupService.applyPendingRestore(databasePath, userDataDirectory);
     const migrationsPath = app.isPackaged
       ? path.join(process.resourcesPath, "migrations")
       : path.join(app.getAppPath(), "database", "migrations");
     database = await openDatabase(databasePath, migrationsPath);
+    const backups = await BackupService.create(
+      database,
+      databasePath,
+      userDataDirectory,
+      app.getAppPath(),
+    );
     registerIpcHandlers(
       new FabricService(database),
       new InventoryService(database),
@@ -133,9 +143,19 @@ app.whenReady().then(async () => {
       new ExpenseService(database),
       new ReportsService(database),
       new ReturnsService(database),
+      backups,
       developmentUrl,
       pathToFileURL(getRendererPath()).href,
     );
+    backupTimer = setInterval(() => {
+      void backups.runScheduledBackupIfDue().catch((error: unknown) => {
+        console.error("Scheduled database backup failed.", error);
+      });
+    }, 60_000);
+    backupTimer.unref();
+    void backups.runScheduledBackupIfDue().catch((error: unknown) => {
+      console.error("Scheduled database backup failed.", error);
+    });
     await createMainWindow();
   } catch (error) {
     console.error("Application startup failed.", error);
@@ -156,6 +176,10 @@ app.whenReady().then(async () => {
 });
 
 app.on("before-quit", (event) => {
+  if (backupTimer) {
+    clearInterval(backupTimer);
+    backupTimer = null;
+  }
   if (!database) return;
   event.preventDefault();
   const activeDatabase = database;

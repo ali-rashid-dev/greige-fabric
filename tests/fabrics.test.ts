@@ -11,6 +11,7 @@ import { AccountingService } from "../src/main/services/accounting";
 import { ExpenseService } from "../src/main/services/expenses";
 import { ReportsService } from "../src/main/services/reports";
 import { ReturnsService } from "../src/main/services/returns";
+import { BackupService } from "../src/main/services/backups";
 import {
   fabricInputSchema,
   stockAdjustmentSchema,
@@ -24,6 +25,8 @@ import {
   accountingEntryReversalSchema,
   accountingManualEntrySchema,
   accountingOpeningBalancesSchema,
+  backupAuthorizationSchema,
+  backupScheduleSchema,
   printDocumentSchema,
 } from "../src/shared/contracts";
 
@@ -134,6 +137,17 @@ describe("fabric quality catalog", () => {
         invoiceId: invoice.id,
         settlementType: "refund",
         paymentAccountCode: "1000",
+        reason: "Duplicate line attempt",
+        items: [
+          { sourceItemId: invoice.items[0].id, quantityMeters: 45, saleable: false },
+          { sourceItemId: invoice.items[0].id, quantityMeters: 45, saleable: false },
+        ],
+      }, "Owner")).toThrowError(/Each invoice line may appear only once/);
+      expect(service.get(fabric.id).fabric.stockMm).toBe(110_000);
+      expect(() => returns.createSales({
+        invoiceId: invoice.id,
+        settlementType: "refund",
+        paymentAccountCode: "1000",
         reason: "Over return attempt",
         items: [{ sourceItemId: invoice.items[0].id, quantityMeters: 91, saleable: true }],
       }, "Owner")).toThrowError(/eligible remaining quantity/);
@@ -222,6 +236,16 @@ describe("fabric quality catalog", () => {
         reason: "Too many",
         items: [{ sourceItemId: purchaseSource!.items[0].sourceItemId, quantityMeters: 16 }],
       }, "Owner")).toThrowError(/eligible remaining quantity/);
+      expect(() => returns.createPurchase({
+        purchaseId: purchase.purchases[0].id,
+        settlementType: "supplier_credit",
+        reason: "Duplicate line attempt",
+        items: [
+          { sourceItemId: purchaseSource!.items[0].sourceItemId, quantityMeters: 7 },
+          { sourceItemId: purchaseSource!.items[0].sourceItemId, quantityMeters: 7 },
+        ],
+      }, "Owner")).toThrowError(/Each purchase line may appear only once/);
+      expect(service.get(fabric.id).fabric.stockMm).toBe(15_000);
       expect(suppliers.reconcile().differenceMinor).toBe(0);
       expect(accounting.trialBalance("2026-10-27").isBalanced).toBe(true);
 
@@ -292,10 +316,12 @@ describe("fabric quality catalog", () => {
         amountReceivedMinor: invoice.amountReceivedMinor,
         dueMinor: 0,
       });
+      expect(customers.get(customer.id).sales[0].dueMinor).toBe(0);
       expect(customers.get(customer.id).customer).toMatchObject({
         outstandingMinor: 0,
         advanceMinor: 100_000,
       });
+
       expect(service.get(fabric.id).fabric.stockMm).toBe(10_000);
       expect(accounting.trialBalance("2026-10-27").isBalanced).toBe(true);
 
@@ -310,6 +336,81 @@ describe("fabric quality catalog", () => {
         advanceMinor: 0,
       });
       expect(accounting.trialBalance("2026-10-27").isBalanced).toBe(true);
+    } finally {
+      close();
+      vi.useRealTimers();
+    }
+  });
+
+  it("keeps receivables and invoice due unchanged for refunded sales", async () => {
+    const { service, inventory, customers, returns, reports, close } = await createService();
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-10-27T12:00:00.000Z"));
+    try {
+      const fabric = service.create(fabricInputSchema.parse(sampleFabric));
+      inventory.openStock({
+        fabricId: fabric.id,
+        quantityMeters: 20,
+        unitCost: 145,
+        reference: "RETURNS-REFUND-STOCK",
+        reason: "Refund receivable test",
+      }, "Owner");
+      const customer = customers.create({
+        code: "CUS-REFUND-AR",
+        name: "Refund AR Customer",
+        phone: "",
+        address: "",
+        openingBalance: 0,
+        creditLimit: 10_000,
+        paymentTermsDays: 0,
+      }, "System");
+      const invoice = service.createInvoice(createInvoiceSchema.parse({
+        customerId: customer.id,
+        items: [{ fabricId: fabric.id, quantityMeters: 20, unitRate: 180 }],
+        receivedAmount: 1_800,
+      }));
+      const saleReturn = returns.createSales({
+        invoiceId: invoice.id,
+        settlementType: "refund",
+        paymentAccountCode: "1000",
+        reason: "Refund paid portion",
+        items: [{ sourceItemId: invoice.items[0].id, quantityMeters: 10, saleable: false }],
+      }, "Owner");
+      expect(saleReturn.totalMinor).toBe(invoice.amountReceivedMinor);
+      expect(service.listInvoices()[0].dueMinor).toBe(180_000);
+      expect(customers.get(customer.id).sales[0].dueMinor).toBe(180_000);
+      expect(customers.get(customer.id).customer.outstandingMinor).toBe(180_000);
+
+      const balances = reports.run({
+        reportType: "customer_balances",
+        from: "2026-10-28",
+        to: "2026-10-28",
+        search: "",
+        page: 1,
+        pageSize: 25,
+      });
+      expect(balances.rows.find((row) => row.code === customer.code)).toMatchObject({
+        balance_minor: 180_000,
+        overdue_minor: 180_000,
+      });
+
+      expect(() => customers.receive(customerReceiptSchema.parse({
+        customerId: customer.id,
+        invoiceId: invoice.id,
+        amount: 1_801,
+        account: "cash",
+        reference: "",
+        note: "",
+      }))).toThrowError(/remaining amount due/);
+      expect(service.listInvoices()[0].dueMinor).toBe(180_000);
+
+      returns.reverse({
+        returnId: saleReturn.id,
+        returnType: "sales_return",
+        reason: "Refund voided",
+      }, "Owner");
+      expect(service.listInvoices()[0].dueMinor).toBe(180_000);
+      expect(customers.get(customer.id).customer.outstandingMinor).toBe(180_000);
     } finally {
       close();
       vi.useRealTimers();
@@ -338,6 +439,14 @@ describe("fabric quality catalog", () => {
     }).success).toBe(false);
     expect(accountingClosePeriodSchema.safeParse({ id: "2026-10" }).success).toBe(false);
     expect(accountingClosePeriodSchema.safeParse({ id: "2026-10", ownerPin: "123456" }).success).toBe(true);
+  });
+
+  it("requires owner authorization for backup export, configuration, verification, and restore", () => {
+    expect(backupAuthorizationSchema.safeParse({}).success).toBe(false);
+    expect(backupAuthorizationSchema.safeParse({ ownerPin: "not-numeric" }).success).toBe(false);
+    expect(backupAuthorizationSchema.safeParse({ ownerPin: "123456" }).success).toBe(true);
+    expect(backupScheduleSchema.safeParse({ frequency: "daily" }).success).toBe(false);
+    expect(backupScheduleSchema.safeParse({ frequency: "daily", ownerPin: "123456" }).success).toBe(true);
   });
 
   it("accepts supported document paper formats and rejects unsupported formats", () => {
@@ -1580,6 +1689,75 @@ describe("fabric quality catalog", () => {
     database = await openDatabase(databasePath, migrations);
     database.close();
     expect((await readdir(directory)).filter((name) => name.endsWith(".bak"))).toHaveLength(1);
+  });
+
+  it("creates, verifies, schedules, and restores a consistent SQLite backup", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "greige-backup-recovery-"));
+    temporaryDirectories.push(directory);
+    const userDataDirectory = path.join(directory, "user-data");
+    const applicationDirectory = path.join(directory, "application");
+    await mkdir(applicationDirectory);
+    const databasePath = path.join(userDataDirectory, "pos.sqlite");
+    let database = await openDatabase(databasePath, migrationsDirectory);
+    database.exec(`
+      CREATE TABLE backup_probe (value TEXT NOT NULL);
+      INSERT INTO backup_probe (value) VALUES ('before-backup');
+    `);
+    const backups = await BackupService.create(
+      database,
+      databasePath,
+      userDataDirectory,
+      applicationDirectory,
+    );
+
+    await expect(backups.setDestination(path.join(applicationDirectory, "backups")))
+      .rejects.toThrow(/outside the application installation directory/);
+    const backup = await backups.createBackup();
+    expect(backups.verifyBackup(backup.path)).toMatchObject({
+      integrity: "ok",
+      foreignKeyViolations: 0,
+    });
+    database.prepare("UPDATE backup_probe SET value = 'after-backup'").run();
+
+    await backups.setSchedule("daily");
+    expect(await backups.runScheduledBackupIfDue(new Date(Date.now() + 2 * 24 * 60 * 60 * 1000)))
+      .toBe(true);
+
+    await backups.stageRestore(backup.path);
+    database.close();
+    expect(await BackupService.applyPendingRestore(databasePath, userDataDirectory)).toBe(true);
+
+    database = await openDatabase(databasePath, migrationsDirectory);
+    try {
+      expect(database.prepare("SELECT value FROM backup_probe").get()).toEqual({ value: "before-backup" });
+      expect(database.pragma("integrity_check", { simple: true })).toBe("ok");
+      expect(await readdir(userDataDirectory)).toEqual(expect.arrayContaining([
+        expect.stringMatching(/^before-restore-/),
+      ]));
+    } finally {
+      database.close();
+    }
+  });
+
+  it("rejects corrupt files as backups and prevents restoring the live database", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "greige-backup-validation-"));
+    temporaryDirectories.push(directory);
+    const userDataDirectory = path.join(directory, "user-data");
+    const applicationDirectory = path.join(directory, "application");
+    await mkdir(applicationDirectory);
+    const databasePath = path.join(userDataDirectory, "pos.sqlite");
+    const database = await openDatabase(databasePath, migrationsDirectory);
+    const backups = await BackupService.create(
+      database,
+      databasePath,
+      userDataDirectory,
+      applicationDirectory,
+    );
+    const invalidFile = path.join(directory, "not-a-backup.sqlite");
+    await writeFile(invalidFile, "not a sqlite database");
+    expect(() => backups.verifyBackup(invalidFile)).toThrow(/readable SQLite database backup/);
+    await expect(backups.stageRestore(databasePath)).rejects.toThrow(/cannot be selected as its own restore source/);
+    database.close();
   });
 
   it("rolls back the receipt-table migration when a legacy payment account is invalid", async () => {

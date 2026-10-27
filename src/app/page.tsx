@@ -10,6 +10,7 @@ import SalesPos from "./sales-pos";
 import ExpensesManagement from "./expenses-management";
 import ReportsManagement from "./reports-management";
 import ReturnsManagement from "./returns-management";
+import BackupManagement from "./backup-management";
 import type {
   Fabric,
   FabricDetails,
@@ -29,7 +30,7 @@ import type {
   SupplierStatement,
 } from "@/shared/types";
 
-type Section = "pos" | "fabrics" | "stock" | "suppliers" | "customers" | "invoices" | "expenses" | "reports" | "returns";
+type Section = "pos" | "fabrics" | "stock" | "suppliers" | "customers" | "invoices" | "expenses" | "reports" | "returns" | "backups";
 type StatusFilter = "active" | "all" | "inactive" | "low-stock";
 type InventoryView = "overview" | "movements" | "low-stock" | "valuation";
 type CustomerTab = "overview" | "sales" | "payments" | "ledger";
@@ -920,7 +921,9 @@ export default function Home() {
               ? "Reports & analytics"
               : section === "returns"
                 ? "Returns & audit"
-                : "Sales history";
+                : section === "backups"
+                  ? "Backup & recovery"
+                  : "Sales history";
 
   return (
     <main className="app-shell">
@@ -960,6 +963,9 @@ export default function Home() {
           </button>
           <button className={section === "returns" ? "nav-item active" : "nav-item"} onClick={() => setSection("returns")}>
             <span className="nav-icon">↶</span> Returns & audit
+          </button>
+          <button className={section === "backups" ? "nav-item active" : "nav-item"} onClick={() => setSection("backups")}>
+            <span className="nav-icon">⤓</span> Backup & recovery
           </button>
         </nav>
         <div className="sidebar-bottom">
@@ -1020,6 +1026,7 @@ export default function Home() {
           {section === "expenses" && <ExpensesManagement />}
           {section === "reports" && <ReportsManagement />}
           {section === "returns" && <ReturnsManagement />}
+          {section === "backups" && <BackupManagement />}
 
           {section === "fabrics" && (
             <>

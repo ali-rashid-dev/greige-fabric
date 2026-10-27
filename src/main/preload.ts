@@ -3,6 +3,14 @@ import { channels } from "../shared/channels";
 import type { DesktopApi } from "../shared/types";
 
 const api: DesktopApi = {
+  backups: {
+    settings: () => ipcRenderer.invoke(channels.backupSettings),
+    create: (input) => ipcRenderer.invoke(channels.backupCreate, input),
+    chooseDestination: (input) => ipcRenderer.invoke(channels.backupChooseDestination, input),
+    setSchedule: (input) => ipcRenderer.invoke(channels.backupSetSchedule, input),
+    verify: (input) => ipcRenderer.invoke(channels.backupVerify, input),
+    restore: (input) => ipcRenderer.invoke(channels.backupRestore, input),
+  },
   returns: {
     data: (input) => ipcRenderer.invoke(channels.returnsData, input),
     createSales: (input) => ipcRenderer.invoke(channels.createSalesReturn, input),

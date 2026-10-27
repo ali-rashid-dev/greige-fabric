@@ -270,6 +270,24 @@ button:disabled {
   background: #f8faf8;
 }
 
+.danger-button {
+  display: inline-flex;
+  min-height: 34px;
+  align-items: center;
+  justify-content: center;
+  padding: 0 12px;
+  border: 1px solid #efd9d5;
+  border-radius: 6px;
+  background: #fff7f5;
+  color: #9b554e;
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.danger-button:hover:not(:disabled) {
+  background: #faece9;
+}
+
 .content-scroll {
   width: min(100%, 1500px);
   flex: 1;
@@ -557,6 +575,112 @@ button:disabled {
   padding: 18px;
   color: var(--muted);
   font-size: 11px;
+}
+
+.backup-page {
+  display: grid;
+  gap: 14px;
+}
+
+.backup-page .panel {
+  padding: 18px;
+}
+
+.backup-settings {
+  display: grid;
+  gap: 15px;
+}
+
+.backup-owner-pin {
+  display: grid;
+  width: min(100%, 300px);
+  gap: 6px;
+  margin: 0 0 5px;
+  color: #536057;
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.backup-owner-pin input {
+  height: 35px;
+  padding: 0 10px;
+  border: 1px solid #e4e9e4;
+  border-radius: 5px;
+  outline: 0;
+  background: white;
+}
+
+.backup-owner-pin input:focus {
+  border-color: #99b5a0;
+  box-shadow: 0 0 0 2px rgb(86 125 104 / 10%);
+}
+
+.backup-setting {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 13px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.backup-setting > div {
+  display: grid;
+  min-width: 0;
+  gap: 5px;
+}
+
+.backup-setting strong,
+.backup-verification strong {
+  color: #536057;
+  font-size: 11px;
+}
+
+.backup-setting span,
+.backup-verification span {
+  overflow-wrap: anywhere;
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.backup-setting select {
+  min-width: 140px;
+  height: 34px;
+  padding: 0 9px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: white;
+}
+
+.backup-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding-top: 5px;
+}
+
+.backup-verification {
+  display: grid;
+  gap: 6px;
+  padding: 12px;
+  border: 1px solid #dcebdd;
+  border-radius: 6px;
+  background: #f3faf3;
+}
+
+.backup-guidance h2 {
+  margin: 0 0 10px;
+  font-size: 13px;
+}
+
+.backup-guidance ul {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding-left: 18px;
+  color: #68756c;
+  font-size: 10px;
+  line-height: 1.6;
 }
 
 .numeric {

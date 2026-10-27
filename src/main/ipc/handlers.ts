@@ -1,8 +1,11 @@
-import { ipcMain } from "electron";
+import { app, BrowserWindow, dialog, ipcMain } from "electron";
+import type { MessageBoxOptions } from "electron";
 import { z } from "zod";
 import {
   createInvoiceSchema,
   returnDataSchema,
+  backupAuthorizationSchema,
+  backupScheduleSchema,
   salesReturnSchema,
   purchaseReturnSchema,
   returnReversalSchema,
@@ -57,10 +60,17 @@ import { AccountingService } from "../services/accounting";
 import { ExpenseService } from "../services/expenses";
 import { ReportsService } from "../services/reports";
 import { ReturnsService } from "../services/returns";
+import { BackupService } from "../services/backups";
 import { isTrustedSender } from "./security";
 
 function failure<T>(code: IpcErrorCode, message: string): IpcResult<T> {
   return { ok: false, error: { code, message } };
+}
+
+async function requireOwnerPin(ownerAuth: OwnerAuthService, ownerPin: string): Promise<void> {
+  if (!await ownerAuth.verifyPin(ownerPin)) {
+    throw new FabricServiceError("AUTHORIZATION", "The owner PIN is incorrect.");
+  }
 }
 
 function registerHandler<Input, Output, Service>(
@@ -108,9 +118,115 @@ export function registerIpcHandlers(
   expenses: ExpenseService,
   reports: ReportsService,
   returns: ReturnsService,
+  backups: BackupService,
   developmentUrl: string | undefined,
   productionFileUrl: string,
 ): void {
+  registerHandler(
+    channels.backupSettings, backups, developmentUrl, productionFileUrl,
+    z.undefined(), (service) => service.getSettings(),
+  );
+  registerHandler(
+    channels.backupCreate, backups, developmentUrl, productionFileUrl,
+    backupAuthorizationSchema, async (service, input) => {
+      await requireOwnerPin(ownerAuth, input.ownerPin);
+      return service.createBackup();
+    },
+  );
+  registerHandler(
+    channels.backupSetSchedule, backups, developmentUrl, productionFileUrl,
+    backupScheduleSchema, async (service, input) => {
+      await requireOwnerPin(ownerAuth, input.ownerPin);
+      return service.setSchedule(input.frequency);
+    },
+  );
+  ipcMain.handle(channels.backupChooseDestination, async (event, rawInput): Promise<IpcResult<Awaited<ReturnType<BackupService["getSettings"]>>>> => {
+    const frame = event.senderFrame;
+    if (!frame || !isTrustedSender(frame.url, frame === event.sender.mainFrame, developmentUrl, productionFileUrl)) {
+      return failure("VALIDATION", "Untrusted application frame.");
+    }
+    try {
+      const parsed = backupAuthorizationSchema.safeParse(rawInput);
+      if (!parsed.success) return failure("VALIDATION", parsed.error.issues[0]?.message ?? "Invalid request.");
+      await requireOwnerPin(ownerAuth, parsed.data.ownerPin);
+      const selected = await dialog.showOpenDialog({
+        title: "Choose backup destination",
+        properties: ["openDirectory", "createDirectory"],
+      });
+      if (selected.canceled || !selected.filePaths[0]) {
+        return { ok: true, data: await backups.getSettings() };
+      }
+      return { ok: true, data: await backups.setDestination(selected.filePaths[0]) };
+    } catch (error) {
+      if (error instanceof FabricServiceError) return failure(error.code, error.message);
+      console.error("Could not select the backup destination.", error);
+      return failure("INTERNAL", "The backup destination could not be selected.");
+    }
+  });
+  ipcMain.handle(channels.backupVerify, async (event, rawInput): Promise<IpcResult<Awaited<ReturnType<BackupService["verifyBackup"]>> | null>> => {
+    const frame = event.senderFrame;
+    if (!frame || !isTrustedSender(frame.url, frame === event.sender.mainFrame, developmentUrl, productionFileUrl)) {
+      return failure("VALIDATION", "Untrusted application frame.");
+    }
+    try {
+      const parsed = backupAuthorizationSchema.safeParse(rawInput);
+      if (!parsed.success) return failure("VALIDATION", parsed.error.issues[0]?.message ?? "Invalid request.");
+      await requireOwnerPin(ownerAuth, parsed.data.ownerPin);
+      const selected = await dialog.showOpenDialog({
+        title: "Select a database backup to verify",
+        properties: ["openFile"],
+        filters: [{ name: "SQLite backup", extensions: ["sqlite", "db", "bak"] }],
+      });
+      if (selected.canceled || !selected.filePaths[0]) return { ok: true, data: null };
+      return { ok: true, data: backups.verifyBackup(selected.filePaths[0]) };
+    } catch (error) {
+      if (error instanceof FabricServiceError) return failure(error.code, error.message);
+      console.error("Backup verification failed.", error);
+      return failure("INTERNAL", "The selected backup could not be verified.");
+    }
+  });
+  ipcMain.handle(channels.backupRestore, async (event, rawInput): Promise<IpcResult<{ restarting: boolean }>> => {
+    const frame = event.senderFrame;
+    if (!frame || !isTrustedSender(frame.url, frame === event.sender.mainFrame, developmentUrl, productionFileUrl)) {
+      return failure("VALIDATION", "Untrusted application frame.");
+    }
+    try {
+      const parsed = backupAuthorizationSchema.safeParse(rawInput);
+      if (!parsed.success) return failure("VALIDATION", parsed.error.issues[0]?.message ?? "Invalid request.");
+      await requireOwnerPin(ownerAuth, parsed.data.ownerPin);
+      const selected = await dialog.showOpenDialog({
+        title: "Select a database backup to restore",
+        properties: ["openFile"],
+        filters: [{ name: "SQLite backup", extensions: ["sqlite", "db", "bak"] }],
+      });
+      if (selected.canceled || !selected.filePaths[0]) return { ok: true, data: { restarting: false } };
+      const verification = backups.verifyBackup(selected.filePaths[0]);
+      const options: MessageBoxOptions = {
+        type: "warning",
+        title: "Restore database backup?",
+        message: "Restore this database backup and restart Greige Fabric POS?",
+        detail: `${verification.path}\n\nThe current database will be preserved as a recovery backup before the selected file is restored.`,
+        buttons: ["Cancel", "Restore and restart"],
+        defaultId: 0,
+        cancelId: 0,
+        noLink: true,
+      };
+      const parent = BrowserWindow.fromWebContents(event.sender);
+      const confirmation = parent
+        ? await dialog.showMessageBox(parent, options)
+        : await dialog.showMessageBox(options);
+      if (confirmation.response !== 1) return { ok: true, data: { restarting: false } };
+      await backups.stageRestore(selected.filePaths[0]);
+      app.relaunch();
+      app.quit();
+      return { ok: true, data: { restarting: true } };
+    } catch (error) {
+      if (error instanceof FabricServiceError) return failure(error.code, error.message);
+      console.error("Database restore could not be staged.", error);
+      return failure("INTERNAL", "The database restore could not be staged.");
+    }
+  });
+
   registerHandler(
     channels.runAnalyticsReport, reports, developmentUrl, productionFileUrl,
     analyticsReportSchema, async (service, input) => {

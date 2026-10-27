@@ -85,18 +85,55 @@ database is not opened, migrated, or deleted.
 
 ## Build and package
 
+The first desktop release targets a 64-bit Windows NSIS installer:
+
 ```sh
-npm run build
 npm run dist
-npm run dist:win
+```
+
+`npm run dist` runs the production build and creates
+`release/Greige Fabric POS-Setup-<version>-x64.exe`. The same Windows build is
+available explicitly as `npm run dist:win`. Run it on Windows or a Windows CI
+runner; creating the NSIS installer from Linux requires Wine. Electron Builder
+rebuilds native dependencies for Electron 42 and the selected Windows x64
+target, and unpacks native `.node` addons from the app archive. The package
+includes the static Next.js export, Electron main/preload files, production
+dependencies, and SQL migrations. This project uses `better-sqlite3` directly;
+it has no Prisma runtime dependency.
+
+The database remains in Electron's per-user `userData` directory, outside the
+installation. The NSIS uninstall configuration preserves this data, and the
+startup migration runner snapshots existing databases before applying
+transactional migrations.
+
+Other platform packages remain available when needed:
+
+```sh
 npm run dist:mac
 npm run dist:linux
 ```
 
-The production renderer is a static export in `out/`; Electron main and preload
-files are written to `dist-electron/`. Electron Builder writes packages to
-`release/`. Cross-platform builds may need a native runner for the target
-operating system. macOS signing and notarization are not configured by default.
+The production renderer is a static export in `out/`; production Electron loads
+it from disk and does not require the Next.js development server. Electron main
+and preload files are written to `dist-electron/`. Electron Builder writes
+packages to `release/`. macOS signing and notarization are not configured by
+default.
+
+### Windows release validation
+
+Before distributing an installer, complete the target-machine checks below.
+Automated database and service tests are not a substitute for testing the
+installer and printer on Windows.
+
+- [ ] Install and launch the installer on a clean Windows x64 machine.
+- [ ] Upgrade an installation containing real test data and confirm the data remains.
+- [ ] Upgrade a database with pending migrations and confirm migration succeeds.
+- [ ] Confirm sales, purchases, and accounting work with networking disabled.
+- [ ] Print an invoice on the shop's target printer and compare its totals.
+- [ ] Create a backup, restore it, and confirm the application recovers the records.
+- [x] Verify write permissions in main-process IPC handlers; protected operations validate owner authorization.
+- [x] Verify production startup loads the exported renderer from disk, not the development server.
+- [x] Run automated tests for transactional inventory/accounting behavior and database migration recovery.
 
 ## Project structure
 

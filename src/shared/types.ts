@@ -524,6 +524,14 @@ export interface CustomerDetails {
 }
 
 export interface DesktopApi {
+  backups: {
+    settings(): Promise<IpcResult<BackupSettings>>;
+    create(input: { ownerPin: string }): Promise<IpcResult<{ path: string; createdAt: string }>>;
+    chooseDestination(input: { ownerPin: string }): Promise<IpcResult<BackupSettings>>;
+    setSchedule(input: { frequency: BackupFrequency; ownerPin: string }): Promise<IpcResult<BackupSettings>>;
+    verify(input: { ownerPin: string }): Promise<IpcResult<BackupVerification | null>>;
+    restore(input: { ownerPin: string }): Promise<IpcResult<{ restarting: boolean }>>;
+  };
   returns: {
     data(input: ReturnDataInput): Promise<IpcResult<ReturnData>>;
     createSales(input: SalesReturnInput): Promise<IpcResult<ReturnRecord>>;
@@ -604,6 +612,23 @@ export interface DesktopApi {
     list(input: ExpenseRangeInput): Promise<IpcResult<Expense[]>>;
     report(input: ExpenseRangeInput): Promise<IpcResult<ExpenseReport>>;
   };
+}
+
+export type BackupFrequency = "disabled" | "daily" | "weekly";
+
+export interface BackupSettings {
+  destinationDirectory: string;
+  frequency: BackupFrequency;
+  lastBackupAt: string | null;
+  nextBackupAt: string | null;
+  lastError: string | null;
+}
+
+export interface BackupVerification {
+  path: string;
+  integrity: "ok";
+  foreignKeyViolations: number;
+  migrationCount: number;
 }
 
 declare global {

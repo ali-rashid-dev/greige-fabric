@@ -26,6 +26,8 @@ import type {
   ExpenseReport,
   ReturnData,
   ReturnRecord,
+  BackupSettings,
+  BackupVerification,
 } from "./types";
 
 function hasPrecision(value: number, scale: number): boolean {
@@ -157,6 +159,13 @@ export const purchaseReturnSchema = z.object({
 });
 
 export const returnDataSchema = z.object({ ownerPin: returnOwnerPin });
+
+export const backupAuthorizationSchema = z.object({
+  ownerPin: z.string().min(6).max(64).regex(/^\d+$/, "PIN must contain digits only"),
+});
+export const backupScheduleSchema = backupAuthorizationSchema.extend({
+  frequency: z.enum(["disabled", "daily", "weekly"]),
+});
 
 export const returnReversalSchema = z.object({
   returnId: z.string().uuid(),
@@ -549,6 +558,7 @@ export type AccountingEntryReversalInput = z.infer<typeof accountingEntryReversa
 export type ExpenseInput = z.infer<typeof expenseInputSchema>;
 export type ExpenseCategoryInput = z.infer<typeof expenseCategoryInputSchema>;
 export type ExpenseRangeInput = z.infer<typeof expenseRangeSchema>;
+export type BackupScheduleInput = z.infer<typeof backupScheduleSchema>;
 
 export type IpcErrorCode =
   | "VALIDATION"
@@ -563,6 +573,12 @@ export type IpcResult<T> =
   | { ok: false; error: { code: IpcErrorCode; message: string } };
 
 export interface IpcContract {
+  "backup:settings": { input: undefined; output: BackupSettings };
+  "backup:create": { input: z.infer<typeof backupAuthorizationSchema>; output: { path: string; createdAt: string } };
+  "backup:choose-destination": { input: z.infer<typeof backupAuthorizationSchema>; output: BackupSettings };
+  "backup:set-schedule": { input: BackupScheduleInput; output: BackupSettings };
+  "backup:verify": { input: z.infer<typeof backupAuthorizationSchema>; output: BackupVerification | null };
+  "backup:restore": { input: z.infer<typeof backupAuthorizationSchema>; output: { restarting: boolean } };
   "reports:run": { input: AnalyticsReportInput; output: AnalyticsReport };
   "returns:data": { input: ReturnDataInput; output: ReturnData };
   "returns:sales": { input: SalesReturnInput; output: ReturnRecord };

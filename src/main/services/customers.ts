@@ -109,7 +109,7 @@ function mapInvoice(row: InvoiceRow, items: InvoiceItemRow[]): Invoice {
     discountMinor: row.discount_minor,
     totalMinor: row.total_minor,
     amountReceivedMinor: row.amount_received_minor,
-    dueMinor: row.total_minor - row.amount_received_minor,
+    dueMinor: Math.max(0, row.total_minor - row.amount_received_minor - row.returned_minor),
     paymentAccount: row.payment_account_code === "1010" ? "bank" : "cash",
     createdAt: row.created_at,
     customerId: row.customer_id ?? undefined,

@@ -291,7 +291,12 @@ export class ReturnsService {
         creditMinor?: number;
         customerId?: string;
       }> = [];
+      const sourceItemIds = new Set<string>();
       for (const line of input.items) {
+        if (sourceItemIds.has(line.sourceItemId)) {
+          throw new FabricServiceError("VALIDATION", "Each invoice line may appear only once in a return.");
+        }
+        sourceItemIds.add(line.sourceItemId);
         const source = invoiceItems.find((item) => item.id === line.sourceItemId);
         if (!source) throw new FabricServiceError("VALIDATION", "A return line does not belong to the selected invoice.");
         const quantityMm = Math.round(line.quantityMeters * 1000);
@@ -362,9 +367,11 @@ export class ReturnsService {
           );
         }
       }
-      this.database.prepare(`
-        UPDATE invoices SET returned_minor = returned_minor + ? WHERE id = ?
-      `).run(totalMinor, invoice.id);
+      if (receivableMinor > 0) {
+        this.database.prepare(`
+          UPDATE invoices SET returned_minor = returned_minor + ? WHERE id = ?
+        `).run(receivableMinor, invoice.id);
+      }
       this.database.prepare(`
         INSERT INTO sales_returns (
           id, return_number, invoice_id, customer_id, settlement_type, payment_account_code,
@@ -440,7 +447,12 @@ export class ReturnsService {
         quantityMm: number;
         valueMinor: number;
       }> = [];
+      const sourceItemIds = new Set<string>();
       for (const line of input.items) {
+        if (sourceItemIds.has(line.sourceItemId)) {
+          throw new FabricServiceError("VALIDATION", "Each purchase line may appear only once in a return.");
+        }
+        sourceItemIds.add(line.sourceItemId);
         const source = this.database.prepare(`
           SELECT id, fabric_id, quantity_mm FROM supplier_purchase_items
           WHERE id = ? AND purchase_id = ?
@@ -545,11 +557,11 @@ export class ReturnsService {
     } | undefined;
     if (!record) throw new FabricServiceError("NOT_FOUND", "Sales return not found.");
     if (record.reversed_at) throw new FabricServiceError("CONFLICT", "This return has already been reversed.");
-    if (record.total_minor > 0) {
+    if (record.receivable_minor > 0) {
       const result = this.database.prepare(`
         UPDATE invoices SET returned_minor = returned_minor - ?
         WHERE id = ? AND returned_minor >= ?
-      `).run(record.total_minor, record.invoice_id, record.total_minor);
+      `).run(record.receivable_minor, record.invoice_id, record.receivable_minor);
       if (result.changes === 0) {
         throw new FabricServiceError("CONFLICT", "The return can no longer be reversed against this invoice.");
       }

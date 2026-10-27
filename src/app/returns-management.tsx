@@ -89,7 +89,7 @@ export default function ReturnsManagement() {
       const items = selectedInvoice.items.flatMap((item) => {
         const quantityMeters = Number(salesQuantities[item.sourceItemId] ?? "");
         return quantityMeters > 0
-          ? [{ sourceItemId: item.sourceItemId, quantityMeters, saleable: saleable[item.sourceItemId] !== false }]
+          ? [{ sourceItemId: item.sourceItemId, quantityMeters, saleable: saleable[item.sourceItemId] === true }]
           : [];
       });
       if (items.length === 0) throw new Error("Enter a return quantity for at least one invoice line.");
@@ -205,7 +205,9 @@ export default function ReturnsManagement() {
               <header className="panel-heading"><div><h2>Return against an invoice</h2><p>Each return line is capped at its eligible remaining quantity. Inspect fabric before marking it saleable.</p></div></header>
               <label>Original invoice
                 <select required value={invoiceId} onChange={(event) => {
+                  const selected = data.sales.find((source) => source.invoiceId === event.target.value);
                   setInvoiceId(event.target.value);
+                  if (selected && !selected.customerId) setSalesSettlement("refund");
                   setSalesQuantities({});
                 }}>
                   {data.sales.map((source) => <option key={source.invoiceId} value={source.invoiceId}>

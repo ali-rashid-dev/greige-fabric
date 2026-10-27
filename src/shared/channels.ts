@@ -1,4 +1,10 @@
 export const channels = {
+  backupSettings: "backup:settings",
+  backupCreate: "backup:create",
+  backupChooseDestination: "backup:choose-destination",
+  backupSetSchedule: "backup:set-schedule",
+  backupVerify: "backup:verify",
+  backupRestore: "backup:restore",
   runAnalyticsReport: "reports:run",
   returnsData: "returns:data",
   createSalesReturn: "returns:sales",
