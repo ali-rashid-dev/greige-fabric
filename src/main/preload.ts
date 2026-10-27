@@ -49,6 +49,21 @@ const api: DesktopApi = {
     list: () => ipcRenderer.invoke(channels.listInvoices),
     create: (input) => ipcRenderer.invoke(channels.createInvoice, input),
   },
+  accounting: {
+    accounts: () => ipcRenderer.invoke(channels.accountingAccounts),
+    createAccount: (input) => ipcRenderer.invoke(channels.accountingCreateAccount, input),
+    updateAccount: (input) => ipcRenderer.invoke(channels.accountingUpdateAccount, input),
+    periods: () => ipcRenderer.invoke(channels.accountingPeriods),
+    closePeriod: (input) => ipcRenderer.invoke(channels.accountingClosePeriod, input),
+    trialBalance: (input) => ipcRenderer.invoke(channels.accountingTrialBalance, input),
+    generalLedger: (input) => ipcRenderer.invoke(channels.accountingGeneralLedger, input),
+    entries: (input = {}) => ipcRenderer.invoke(channels.accountingEntries, input),
+    entry: (input) => ipcRenderer.invoke(channels.accountingEntry, input),
+    postEntry: (input) => ipcRenderer.invoke(channels.accountingPostEntry, input),
+    openingBalances: (input) => ipcRenderer.invoke(channels.accountingOpeningBalances, input),
+    reverseEntry: (input) => ipcRenderer.invoke(channels.accountingReverseEntry, input),
+    reconcile: () => ipcRenderer.invoke(channels.accountingReconcile),
+  },
 };
 
 contextBridge.exposeInMainWorld("electronAPI", api);

@@ -2,6 +2,16 @@ import { ipcMain } from "electron";
 import { z } from "zod";
 import {
   createInvoiceSchema,
+  accountingClosePeriodSchema,
+  accountingCreateAccountSchema,
+  accountingEntryIdSchema,
+  accountingEntryListSchema,
+  accountingEntryReversalSchema,
+  accountingGeneralLedgerSchema,
+  accountingManualEntrySchema,
+  accountingOpeningBalancesSchema,
+  accountingTrialBalanceSchema,
+  accountingUpdateAccountSchema,
   customerInputSchema,
   customerListSchema,
   customerReceiptSchema,
@@ -34,6 +44,7 @@ import { InventoryService } from "../services/inventory";
 import { SupplierService } from "../services/suppliers";
 import { FabricService } from "../services/fabrics";
 import { CustomerService } from "../services/customers";
+import { AccountingService } from "../services/accounting";
 import { isTrustedSender } from "./security";
 
 function failure<T>(code: IpcErrorCode, message: string): IpcResult<T> {
@@ -81,6 +92,7 @@ export function registerIpcHandlers(
   suppliers: SupplierService,
   ownerAuth: OwnerAuthService,
   customers: CustomerService,
+  accounting: AccountingService,
   developmentUrl: string | undefined,
   productionFileUrl: string,
 ): void {
@@ -248,5 +260,57 @@ export function registerIpcHandlers(
   registerHandler(
     channels.customerStatement, customers, developmentUrl, productionFileUrl,
     customerStatementSchema, (service, input) => service.statement(input),
+  );
+  registerHandler(
+    channels.accountingAccounts, accounting, developmentUrl, productionFileUrl,
+    z.undefined(), (service) => service.listAccounts(),
+  );
+  registerHandler(
+    channels.accountingCreateAccount, accounting, developmentUrl, productionFileUrl,
+    accountingCreateAccountSchema, (service, input) => service.createAccount(input),
+  );
+  registerHandler(
+    channels.accountingUpdateAccount, accounting, developmentUrl, productionFileUrl,
+    accountingUpdateAccountSchema, (service, input) => service.updateAccount(input),
+  );
+  registerHandler(
+    channels.accountingPeriods, accounting, developmentUrl, productionFileUrl,
+    z.undefined(), (service) => service.listPeriods(),
+  );
+  registerHandler(
+    channels.accountingClosePeriod, accounting, developmentUrl, productionFileUrl,
+    accountingClosePeriodSchema, (service, input) => service.closePeriod(input.id),
+  );
+  registerHandler(
+    channels.accountingTrialBalance, accounting, developmentUrl, productionFileUrl,
+    accountingTrialBalanceSchema, (service, input) => service.trialBalance(input.asOf),
+  );
+  registerHandler(
+    channels.accountingGeneralLedger, accounting, developmentUrl, productionFileUrl,
+    accountingGeneralLedgerSchema, (service, input) => service.generalLedger(input),
+  );
+  registerHandler(
+    channels.accountingEntries, accounting, developmentUrl, productionFileUrl,
+    accountingEntryListSchema, (service, input) => service.listEntries(input.limit),
+  );
+  registerHandler(
+    channels.accountingEntry, accounting, developmentUrl, productionFileUrl,
+    accountingEntryIdSchema, (service, input) => service.getEntry(input.id),
+  );
+  registerHandler(
+    channels.accountingPostEntry, accounting, developmentUrl, productionFileUrl,
+    accountingManualEntrySchema, (service, input) => service.postEntry(input),
+  );
+  registerHandler(
+    channels.accountingOpeningBalances, accounting, developmentUrl, productionFileUrl,
+    accountingOpeningBalancesSchema, (service, input) => service.postOpeningBalances(input),
+  );
+  registerHandler(
+    channels.accountingReverseEntry, accounting, developmentUrl, productionFileUrl,
+    accountingEntryReversalSchema, (service, input) => service.reverseEntry(input.id, input.reason),
+  );
+  registerHandler(
+    channels.accountingReconcile, accounting, developmentUrl, productionFileUrl,
+    z.undefined(), (service) => service.reconcile(),
   );
 }

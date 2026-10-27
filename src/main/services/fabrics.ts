@@ -379,7 +379,7 @@ export class FabricService {
         { accountCode: "4000", creditMinor: totalMinor },
         { accountCode: "5000", debitMinor: costOfGoodsSold },
         { accountCode: "1200", creditMinor: costOfGoodsSold },
-      ]);
+      ], "System", id);
     });
     create.immediate();
     return {

@@ -6,6 +6,11 @@ import type {
   Customer,
   CustomerDetails,
   CustomerStatement,
+  AccountingPeriod,
+  AccountingReconciliation,
+  ChartOfAccount,
+  GeneralLedger,
+  JournalEntry,
   Invoice,
   InventoryMovement,
   InventoryReport,
@@ -14,6 +19,7 @@ import type {
   SupplierDetails,
   SupplierStatement,
   StockSummary,
+  TrialBalance,
 } from "./types";
 
 function hasPrecision(value: number, scale: number): boolean {
@@ -278,6 +284,110 @@ export const customerStatementSchema = z.object({
   message: "End date must be on or after start date.",
 });
 
+const accountingJournalLineSchema = z.object({
+  accountCode: z.string().trim().min(1).max(40),
+  debitMinor: z.number().int().safe().nonnegative().default(0),
+  creditMinor: z.number().int().safe().nonnegative().default(0),
+  supplierId: z.string().uuid().optional(),
+  customerId: z.string().uuid().optional(),
+}).superRefine((line, context) => {
+  if ((line.debitMinor > 0) === (line.creditMinor > 0)) {
+    context.addIssue({
+      code: "custom",
+      message: "Each journal line must have one positive debit or credit.",
+    });
+  }
+  if (line.customerId && line.supplierId) {
+    context.addIssue({
+      code: "custom",
+      message: "A journal line cannot reference both a customer and supplier.",
+    });
+  }
+});
+
+const accountingJournalFields = {
+  sourceId: z.string().trim().min(1).max(120),
+  date: z.string().date(),
+  lines: z.array(accountingJournalLineSchema).min(2).max(100),
+};
+
+function requireBalancedJournal(
+  input: { lines: Array<{ debitMinor: number; creditMinor: number }> },
+  context: z.RefinementCtx,
+): void {
+  const debits = input.lines.reduce((sum, line) => sum + BigInt(line.debitMinor), 0n);
+  const credits = input.lines.reduce((sum, line) => sum + BigInt(line.creditMinor), 0n);
+  if (debits > BigInt(Number.MAX_SAFE_INTEGER) || credits > BigInt(Number.MAX_SAFE_INTEGER)) {
+    context.addIssue({ code: "custom", message: "The journal entry exceeds supported accounting precision." });
+  } else if (debits !== credits) {
+    context.addIssue({ code: "custom", message: "The journal entry must balance debits and credits." });
+  }
+}
+
+export const accountingCreateAccountSchema = z.object({
+  code: z.string().trim().min(1).max(40).regex(/^[A-Za-z0-9._-]+$/),
+  name: z.string().trim().min(1).max(120),
+  accountType: z.enum(["asset", "liability", "equity", "income", "expense"]),
+  isPaymentAccount: z.boolean().default(false),
+}).superRefine((input, context) => {
+  if (input.isPaymentAccount && input.accountType !== "asset") {
+    context.addIssue({
+      code: "custom",
+      path: ["isPaymentAccount"],
+      message: "Only asset accounts can be configured as payment accounts.",
+    });
+  }
+});
+
+export const accountingUpdateAccountSchema = z.object({
+  code: z.string().trim().min(1).max(40),
+  name: z.string().trim().min(1).max(120),
+  isPaymentAccount: z.boolean(),
+});
+
+export const accountingClosePeriodSchema = z.object({
+  id: z.string().trim().min(1).max(80),
+});
+
+export const accountingTrialBalanceSchema = z.object({
+  asOf: z.string().date(),
+});
+
+export const accountingGeneralLedgerSchema = z.object({
+  accountCode: z.string().trim().min(1).max(40),
+  from: z.string().date(),
+  to: z.string().date(),
+}).refine(({ from, to }) => from <= to, {
+  path: ["to"],
+  message: "End date must be on or after start date.",
+});
+
+export const accountingEntryListSchema = z.object({
+  limit: z.number().int().min(1).max(500).default(100),
+});
+
+export const accountingEntryIdSchema = z.object({
+  id: z.string().uuid(),
+});
+
+export const accountingEntryReversalSchema = z.object({
+  id: z.string().uuid(),
+  reason: z.string().trim().min(1).max(160),
+});
+
+export const accountingManualEntrySchema = z.object({
+  sourceId: accountingJournalFields.sourceId,
+  reference: z.string().trim().min(1).max(120),
+  date: accountingJournalFields.date,
+  lines: accountingJournalFields.lines,
+}).superRefine(requireBalancedJournal);
+
+export const accountingOpeningBalancesSchema = z.object({
+  sourceId: accountingJournalFields.sourceId,
+  date: accountingJournalFields.date,
+  lines: accountingJournalFields.lines,
+}).superRefine(requireBalancedJournal);
+
 export const pinSchema = z.object({
   pin: z.string().min(6, "PIN must be at least 6 characters").max(64)
     .regex(/^\d+$/, "PIN must contain digits only"),
@@ -311,6 +421,13 @@ export type CustomerListInput = z.input<typeof customerListSchema>;
 export type CustomerReceiptInput = z.infer<typeof customerReceiptSchema>;
 export type CustomerReceiptReversalInput = z.infer<typeof customerReceiptReversalSchema>;
 export type CustomerStatementInput = z.infer<typeof customerStatementSchema>;
+export type AccountingCreateAccountInput = z.infer<typeof accountingCreateAccountSchema>;
+export type AccountingUpdateAccountInput = z.infer<typeof accountingUpdateAccountSchema>;
+export type AccountingTrialBalanceInput = z.infer<typeof accountingTrialBalanceSchema>;
+export type AccountingGeneralLedgerInput = z.infer<typeof accountingGeneralLedgerSchema>;
+export type AccountingEntryListInput = z.input<typeof accountingEntryListSchema>;
+export type AccountingManualEntryInput = z.infer<typeof accountingManualEntrySchema>;
+export type AccountingOpeningBalancesInput = z.infer<typeof accountingOpeningBalancesSchema>;
 
 export type IpcErrorCode =
   | "VALIDATION"
@@ -357,4 +474,17 @@ export interface IpcContract {
   "suppliers:adjust": { input: SupplierAdjustmentInput; output: SupplierDetails };
   "suppliers:statement": { input: SupplierStatementInput; output: SupplierStatement };
   "suppliers:reconcile": { input: undefined; output: { controlMinor: number; subledgerMinor: number; differenceMinor: number } };
+  "accounting:accounts": { input: undefined; output: ChartOfAccount[] };
+  "accounting:create-account": { input: AccountingCreateAccountInput; output: ChartOfAccount };
+  "accounting:update-account": { input: AccountingUpdateAccountInput; output: ChartOfAccount };
+  "accounting:periods": { input: undefined; output: AccountingPeriod[] };
+  "accounting:close-period": { input: { id: string }; output: AccountingPeriod };
+  "accounting:trial-balance": { input: AccountingTrialBalanceInput; output: TrialBalance };
+  "accounting:general-ledger": { input: AccountingGeneralLedgerInput; output: GeneralLedger };
+  "accounting:entries": { input: AccountingEntryListInput; output: JournalEntry[] };
+  "accounting:entry": { input: { id: string }; output: JournalEntry };
+  "accounting:post-entry": { input: AccountingManualEntryInput; output: JournalEntry };
+  "accounting:opening-balances": { input: AccountingOpeningBalancesInput; output: JournalEntry };
+  "accounting:reverse-entry": { input: { id: string; reason: string }; output: JournalEntry };
+  "accounting:reconcile": { input: undefined; output: AccountingReconciliation };
 }

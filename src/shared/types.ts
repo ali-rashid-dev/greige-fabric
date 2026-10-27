@@ -5,6 +5,13 @@ import type {
   CustomerListInput,
   CustomerReceiptInput,
   CustomerStatementInput,
+  AccountingCreateAccountInput,
+  AccountingEntryListInput,
+  AccountingGeneralLedgerInput,
+  AccountingManualEntryInput,
+  AccountingOpeningBalancesInput,
+  AccountingTrialBalanceInput,
+  AccountingUpdateAccountInput,
   FabricFiltersInput,
   FabricIdInput,
   FabricInput,
@@ -171,6 +178,104 @@ export interface PaymentAccount {
   name: string;
 }
 
+export type AccountType = "asset" | "liability" | "equity" | "income" | "expense";
+export type NormalBalance = "debit" | "credit";
+
+export interface ChartOfAccount {
+  code: string;
+  name: string;
+  accountType: AccountType;
+  normalBalance: NormalBalance;
+  isPaymentAccount: boolean;
+}
+
+export interface AccountingPeriod {
+  id: string;
+  name: string;
+  startsOn: string;
+  endsOn: string;
+  status: "open" | "closed";
+}
+
+export interface JournalLineInput {
+  accountCode: string;
+  debitMinor?: number;
+  creditMinor?: number;
+  supplierId?: string;
+  customerId?: string;
+}
+
+export interface JournalLine {
+  accountCode: string;
+  accountName: string;
+  debitMinor: number;
+  creditMinor: number;
+  supplierId?: string;
+  customerId?: string;
+}
+
+export interface JournalEntry {
+  id: string;
+  transactionType: string;
+  reference: string;
+  authorizedUser: string;
+  createdAt: string;
+  periodId?: string;
+  reversalOfTransactionId?: string;
+  reversedByTransactionId?: string;
+  reversalReason?: string;
+  lines: JournalLine[];
+}
+
+export interface TrialBalanceLine {
+  accountCode: string;
+  accountName: string;
+  accountType: AccountType;
+  normalBalance: NormalBalance;
+  debitMinor: number;
+  creditMinor: number;
+}
+
+export interface TrialBalance {
+  asOf: string;
+  lines: TrialBalanceLine[];
+  totalDebitsMinor: number;
+  totalCreditsMinor: number;
+  isBalanced: boolean;
+}
+
+export interface GeneralLedgerLine {
+  transactionId: string;
+  transactionType: string;
+  reference: string;
+  createdAt: string;
+  debitMinor: number;
+  creditMinor: number;
+  balanceMinor: number;
+}
+
+export interface GeneralLedger {
+  account: ChartOfAccount;
+  from: string;
+  to: string;
+  openingBalanceMinor: number;
+  closingBalanceMinor: number;
+  lines: GeneralLedgerLine[];
+}
+
+export interface ReconciliationCheck {
+  name: string;
+  expectedMinor: number;
+  actualMinor: number;
+  differenceMinor: number;
+  isBalanced: boolean;
+}
+
+export interface AccountingReconciliation {
+  checks: ReconciliationCheck[];
+  isBalanced: boolean;
+}
+
 export interface SupplierStatementLine {
   transactionType: string;
   reference: string;
@@ -300,6 +405,21 @@ export interface DesktopApi {
   invoices: {
     list(): Promise<IpcResult<Invoice[]>>;
     create(input: CreateInvoiceInput): Promise<IpcResult<Invoice>>;
+  };
+  accounting: {
+    accounts(): Promise<IpcResult<ChartOfAccount[]>>;
+    createAccount(input: AccountingCreateAccountInput): Promise<IpcResult<ChartOfAccount>>;
+    updateAccount(input: AccountingUpdateAccountInput): Promise<IpcResult<ChartOfAccount>>;
+    periods(): Promise<IpcResult<AccountingPeriod[]>>;
+    closePeriod(input: { id: string }): Promise<IpcResult<AccountingPeriod>>;
+    trialBalance(input: AccountingTrialBalanceInput): Promise<IpcResult<TrialBalance>>;
+    generalLedger(input: AccountingGeneralLedgerInput): Promise<IpcResult<GeneralLedger>>;
+    entries(input?: AccountingEntryListInput): Promise<IpcResult<JournalEntry[]>>;
+    entry(input: { id: string }): Promise<IpcResult<JournalEntry>>;
+    postEntry(input: AccountingManualEntryInput): Promise<IpcResult<JournalEntry>>;
+    openingBalances(input: AccountingOpeningBalancesInput): Promise<IpcResult<JournalEntry>>;
+    reverseEntry(input: { id: string; reason: string }): Promise<IpcResult<JournalEntry>>;
+    reconcile(): Promise<IpcResult<AccountingReconciliation>>;
   };
 }
 

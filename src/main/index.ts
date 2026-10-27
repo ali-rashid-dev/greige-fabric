@@ -8,6 +8,7 @@ import { InventoryService } from "./services/inventory";
 import { SupplierService } from "./services/suppliers";
 import { OwnerAuthService } from "./services/owner-auth";
 import { CustomerService } from "./services/customers";
+import { AccountingService } from "./services/accounting";
 
 const developmentUrl = process.env.DESKTOP_DEV_URL;
 let mainWindow: BrowserWindow | null = null;
@@ -125,6 +126,7 @@ app.whenReady().then(async () => {
       new SupplierService(database),
       new OwnerAuthService(path.join(app.getPath("userData"), "owner-pin.enc")),
       new CustomerService(database),
+      new AccountingService(database),
       developmentUrl,
       pathToFileURL(getRendererPath()).href,
     );

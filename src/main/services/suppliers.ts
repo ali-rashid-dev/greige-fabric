@@ -199,7 +199,7 @@ export class SupplierService {
         postJournal(this.database, "supplier_opening_balance", `Opening balance ${input.code}`, now, [
           { accountCode: "3000", debitMinor: openingBalance },
           { accountCode: "2100", creditMinor: openingBalance, supplierId: id },
-        ], authorizedUser);
+        ], authorizedUser, id);
       }
     });
     try {
@@ -311,6 +311,7 @@ export class SupplierService {
         purchaseTimestamp,
         purchaseAccountLines,
         "Supplier receipt",
+        id,
       );
       if (paidMinor > 0) {
         const paymentId = randomUUID();
@@ -324,7 +325,7 @@ export class SupplierService {
           postJournal(this.database, "supplier_payment", paymentNumber, purchaseTimestamp, [
             { accountCode: "2100", supplierId: input.supplierId, debitMinor: paidMinor },
             { accountCode: paymentAccountCode, creditMinor: paidMinor },
-          ], "Supplier receipt");
+          ], "Supplier receipt", paymentId);
         }
         this.database.prepare(`
           INSERT INTO supplier_payments (
@@ -388,7 +389,7 @@ export class SupplierService {
       postJournal(this.database, "supplier_payment", paymentNumber, now, [
         { accountCode: "2100", supplierId: input.supplierId, debitMinor: amount },
         { accountCode, creditMinor: amount },
-      ]);
+      ], "System", id);
     });
     transaction.immediate();
     return this.get(input.supplierId);
@@ -426,7 +427,7 @@ export class SupplierService {
       postJournal(this.database, "supplier_payment_reversal", payment.payment_number, now, [
         { accountCode: payment.account_code, debitMinor: payment.amount_minor },
         { accountCode: "2100", supplierId: payment.supplier_id, creditMinor: payment.amount_minor },
-      ]);
+      ], "System", `payment-reversal:${payment.id}`);
     });
     transaction.immediate();
     return this.get(supplierId);
@@ -448,7 +449,7 @@ export class SupplierService {
         : [
           { accountCode: "2100", supplierId: input.supplierId, debitMinor: amount },
           { accountCode: "5100", creditMinor: amount },
-        ], authorizedUser);
+        ], authorizedUser, randomUUID());
     });
     transaction.immediate();
     return this.get(input.supplierId);

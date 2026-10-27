@@ -168,7 +168,7 @@ export class CustomerService {
         postJournal(this.database, "customer_opening_balance", `Opening balance ${input.code}`, now, [
           { accountCode: "1300", debitMinor: openingBalance, customerId: id },
           { accountCode: "3000", creditMinor: openingBalance },
-        ], authorizedUser);
+        ], authorizedUser, id);
       }
     });
     try {
@@ -302,7 +302,7 @@ export class CustomerService {
         ...(advanceMinor > 0
           ? [{ accountCode: "2200", customerId: input.customerId, creditMinor: advanceMinor }]
           : []),
-      ]);
+      ], "System", id);
     });
     transaction.immediate();
     return this.get(input.customerId);
@@ -351,7 +351,7 @@ export class CustomerService {
             ? [{ accountCode: "2200", customerId: receipt.customer_id, debitMinor: receipt.advance_minor }]
             : []),
           { accountCode: receipt.account_code, creditMinor: receipt.amount_minor },
-        ]);
+        ], "System", `receipt-reversal:${receipt.id}`);
     });
     transaction.immediate();
     const receiptCustomer = this.database.prepare("SELECT customer_id FROM customer_receipts WHERE id = ?")

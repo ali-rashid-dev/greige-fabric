@@ -7,6 +7,7 @@ import { FabricService, FabricServiceError } from "../src/main/services/fabrics"
 import { InventoryService } from "../src/main/services/inventory";
 import { SupplierService } from "../src/main/services/suppliers";
 import { CustomerService } from "../src/main/services/customers";
+import { AccountingService } from "../src/main/services/accounting";
 import {
   fabricInputSchema,
   stockAdjustmentSchema,
@@ -27,6 +28,7 @@ async function createService(): Promise<{
   inventory: InventoryService;
   suppliers: SupplierService;
   customers: CustomerService;
+  accounting: AccountingService;
   close: () => void;
 }> {
   const directory = await mkdtemp(path.join(os.tmpdir(), "greige-fabrics-"));
@@ -38,6 +40,7 @@ async function createService(): Promise<{
     inventory: new InventoryService(database),
     suppliers: new SupplierService(database),
     customers: new CustomerService(database),
+    accounting: new AccountingService(database),
     close: () => database.close(),
   };
 }
@@ -61,6 +64,146 @@ const sampleFabric = {
 };
 
 describe("fabric quality catalog", () => {
+  it("balances purchases, sales, receipts and expenses in accounting reports", async () => {
+    const { database, service, inventory, suppliers, customers, accounting, close } = await createService();
+    try {
+      const fabric = service.create(fabricInputSchema.parse(sampleFabric));
+      const openingEntry = accounting.postOpeningBalances({
+        sourceId: "opening-ledger-2026",
+        date: "2026-10-27",
+        lines: [
+          { accountCode: "1000", debitMinor: 100_000 },
+          { accountCode: "3000", creditMinor: 100_000 },
+        ],
+      });
+      expect(openingEntry?.transactionType).toBe("opening_balance");
+      const supplier = suppliers.create({
+        code: "SUP-LEDGER",
+        name: "Ledger Supplier",
+        phone: "03000000000",
+        address: "",
+        contactName: "",
+        email: "",
+        openingBalance: 0,
+      }, "System");
+      suppliers.receive(supplierPurchaseSchema.parse({
+        supplierId: supplier.id,
+        billNumber: "LEDGER-BILL-1",
+        purchaseDate: "2026-10-27",
+        additionalCosts: 0,
+        paymentMode: "credit",
+        amountPaid: 0,
+        items: [{ fabricId: fabric.id, quantityMeters: 20, unitCost: 145 }],
+      }));
+      const customer = customers.create({
+        code: "CUS-LEDGER",
+        name: "Ledger Customer",
+        phone: "",
+        address: "",
+        openingBalance: 0,
+        creditLimit: 1000,
+        paymentTermsDays: 30,
+      }, "System");
+      const invoice = service.createInvoice(createInvoiceSchema.parse({
+        customerId: customer.id,
+        items: [{ fabricId: fabric.id, quantityMeters: 5, unitRate: 200 }],
+        receivedAmount: 0,
+      }));
+      customers.receive(customerReceiptSchema.parse({
+        customerId: customer.id,
+        invoiceId: invoice.id,
+        amount: 500,
+        account: "cash",
+      }));
+
+      const expenseAccount = accounting.createAccount({
+        code: "5300",
+        name: "Office Expenses",
+        accountType: "expense",
+        isPaymentAccount: false,
+      });
+      expect(expenseAccount.normalBalance).toBe("debit");
+      const expense = accounting.postEntry({
+        sourceId: "expense-ledger-1",
+        reference: "EXP-LEDGER-1",
+        date: "2026-10-27",
+        lines: [
+          { accountCode: "5300", debitMinor: 10_000 },
+          { accountCode: "1000", creditMinor: 10_000 },
+        ],
+      });
+      expect(expense?.lines).toHaveLength(2);
+      expect(accounting.trialBalance("2026-10-26").lines.find((line) => line.accountCode === "5300"))
+        .toMatchObject({ debitMinor: 0, creditMinor: 0 });
+      expect(() => accounting.postEntry({
+        sourceId: "expense-ledger-1",
+        reference: "EXP-LEDGER-1",
+        date: "2026-10-27",
+        lines: [
+          { accountCode: "5300", debitMinor: 10_000 },
+          { accountCode: "1000", creditMinor: 10_000 },
+        ],
+      })).toThrow();
+
+      const trialBalance = accounting.trialBalance("2026-10-27");
+      expect(trialBalance.isBalanced).toBe(true);
+      expect(trialBalance.totalDebitsMinor).toBe(trialBalance.totalCreditsMinor);
+      expect(accounting.generalLedger({
+        accountCode: "5300",
+        from: "2026-10-27",
+        to: "2026-10-27",
+      }).closingBalanceMinor).toBe(10_000);
+      expect(accounting.reconcile()).toMatchObject({
+        isBalanced: true,
+        checks: expect.arrayContaining([
+          expect.objectContaining({ name: "Accounts receivable subledger", isBalanced: true }),
+          expect.objectContaining({ name: "Accounts payable subledger", isBalanced: true }),
+          expect.objectContaining({ name: "Inventory valuation", isBalanced: true }),
+        ]),
+      });
+
+      const expenseEntry = expense!;
+      expect(() => database.prepare("UPDATE ledger_transactions SET reference = 'changed' WHERE id = ?")
+        .run(expenseEntry.id)).toThrow(/immutable/);
+      expect(() => database.prepare("DELETE FROM ledger_postings WHERE transaction_id = ?")
+        .run(expenseEntry.id)).toThrow(/immutable/);
+      const reversal = accounting.reverseEntry(expenseEntry.id, "Incorrect expense entry");
+      expect(reversal).toMatchObject({
+        transactionType: "reversal",
+        reference: "EXP-LEDGER-1",
+        reversalOfTransactionId: expenseEntry.id,
+        reversalReason: "Incorrect expense entry",
+      });
+      expect(accounting.getEntry(expenseEntry.id).reversedByTransactionId).toBe(reversal.id);
+      expect(() => accounting.reverseEntry(expenseEntry.id, "Duplicate reversal")).toThrow();
+      expect(accounting.trialBalance("2026-10-27").isBalanced).toBe(true);
+
+      const period = accounting.listPeriods().find((item) => item.startsOn <= "2026-10-27" && item.endsOn >= "2026-10-27");
+      expect(period?.status).toBe("open");
+      accounting.closePeriod(period!.id);
+      const invoicesBeforeClosedPeriodSale = service.listInvoices().length;
+      const stockBeforeClosedPeriodSale = service.get(fabric.id).fabric.stockMm;
+      const movementsBeforeClosedPeriodSale = inventory.movements().length;
+      expect(() => service.createInvoice(createInvoiceSchema.parse({
+        items: [{ fabricId: fabric.id, quantityMeters: 1 }],
+      }))).toThrow(/closed/);
+      expect(service.listInvoices()).toHaveLength(invoicesBeforeClosedPeriodSale);
+      expect(service.get(fabric.id).fabric.stockMm).toBe(stockBeforeClosedPeriodSale);
+      expect(inventory.movements()).toHaveLength(movementsBeforeClosedPeriodSale);
+      expect(() => accounting.postEntry({
+        sourceId: "expense-closed-period",
+        reference: "EXP-CLOSED",
+        date: "2026-10-27",
+        lines: [
+          { accountCode: "5300", debitMinor: 100 },
+          { accountCode: "1000", creditMinor: 100 },
+        ],
+      })).toThrow(/closed/);
+    } finally {
+      close();
+    }
+  });
+
   it("validates required fields and normalizes unique SKUs", async () => {
     expect(fabricInputSchema.safeParse({ ...sampleFabric, name: " " }).success).toBe(false);
     expect(fabricInputSchema.parse(sampleFabric).sku).toBe("GF-0001");
@@ -829,6 +972,56 @@ describe("fabric quality catalog", () => {
       expect(columns.map((column) => column.name)).not.toContain("reversed_at");
       expect(database.prepare("SELECT id, account_code FROM customer_receipts")
         .get()).toEqual({ id: "legacy-receipt", account_code: "9999" });
+    } finally {
+      database.close();
+    }
+  });
+
+  it("backfills existing journal entries into accounting periods without changing their postings", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "greige-accounting-migration-"));
+    temporaryDirectories.push(directory);
+    const oldMigrations = path.join(directory, "old-migrations");
+    await mkdir(oldMigrations);
+    for (const name of (await readdir(migrationsDirectory)).filter((entry) => entry < "009_accounting_engine.sql")) {
+      await copyFile(path.join(migrationsDirectory, name), path.join(oldMigrations, name));
+    }
+
+    const databasePath = path.join(directory, "existing-pos.sqlite");
+    let database = await openDatabase(databasePath, oldMigrations);
+    database.prepare(`
+      INSERT INTO ledger_transactions (id, transaction_type, reference, authorized_user, created_at)
+      VALUES ('legacy-journal', 'legacy_adjustment', 'LEGACY-REF', 'Legacy', '2024-01-15T12:00:00.000Z')
+    `).run();
+    database.prepare(`
+      INSERT INTO ledger_postings (id, transaction_id, account_code, debit_minor, credit_minor)
+      VALUES
+        ('legacy-debit', 'legacy-journal', '1000', 2500, 0),
+        ('legacy-credit', 'legacy-journal', '4000', 0, 2500)
+    `).run();
+    database.close();
+
+    database = await openDatabase(databasePath, migrationsDirectory);
+    try {
+      expect(database.prepare(`
+        SELECT source_key, period_id FROM ledger_transactions WHERE id = 'legacy-journal'
+      `).get()).toEqual({ source_key: "legacy:legacy-journal", period_id: "2024-01" });
+      expect(database.prepare(`
+        SELECT id, status FROM accounting_periods WHERE id = '2024-01'
+      `).get()).toEqual({ id: "2024-01", status: "open" });
+      expect(database.prepare(`
+        SELECT account_code, SUM(debit_minor) AS debit, SUM(credit_minor) AS credit
+        FROM ledger_postings WHERE transaction_id = 'legacy-journal'
+        GROUP BY account_code ORDER BY account_code
+      `).all()).toEqual([
+        { account_code: "1000", debit: 2500, credit: 0 },
+        { account_code: "4000", debit: 0, credit: 2500 },
+      ]);
+      expect(database.prepare(`
+        SELECT normal_balance FROM ledger_accounts WHERE code = '4000'
+      `).get()).toEqual({ normal_balance: "credit" });
+      expect(() => database.prepare(`
+        UPDATE ledger_transactions SET reference = 'mutated' WHERE id = 'legacy-journal'
+      `).run()).toThrow(/immutable/);
     } finally {
       database.close();
     }

@@ -46,7 +46,7 @@ export class InventoryService {
     const unitCostMinor = Math.round(input.unitCost * 100);
     const createdAt = new Date().toISOString();
     const transaction = this.database.transaction(() => {
-      this.postMovement({
+      const movementId = this.postMovement({
         fabricId: input.fabricId,
         quantityMm,
         type: "opening",
@@ -60,7 +60,7 @@ export class InventoryService {
       postJournal(this.database, "inventory_opening", input.reference, createdAt, [
         { accountCode: "1200", debitMinor: value },
         { accountCode: "3000", creditMinor: value },
-      ]);
+      ], authorizedUser, movementId);
     });
     transaction.immediate();
   }
@@ -80,7 +80,7 @@ export class InventoryService {
       const value = delta > 0
         ? calculateMinorValue(quantityMm, current.purchase_cost_minor)
         : calculateProportionalValue(current.stock_value_minor, quantityMm, current.stock_qty_mm);
-      this.postMovement({
+      const movementId = this.postMovement({
         fabricId: input.fabricId,
         quantityMm: delta,
         type: "adjustment",
@@ -97,7 +97,7 @@ export class InventoryService {
         : [
           { accountCode: "5100", debitMinor: value },
           { accountCode: "1200", creditMinor: value },
-        ]);
+        ], authorizedUser, movementId);
     });
     transaction.immediate();
   }
@@ -112,7 +112,7 @@ export class InventoryService {
     createdAt: string;
     incomingUnitCostMinor?: number;
     incomingValueMinor?: number;
-  }): void {
+  }): string {
     const current = this.getStock(input.fabricId);
     const newQuantity = current.stock_qty_mm + input.quantityMm;
     if (newQuantity < 0) {
@@ -144,14 +144,16 @@ export class InventoryService {
       UPDATE fabrics SET stock_qty_mm = ?, stock_value_minor = ?, purchase_cost_minor = ?, updated_at = ?
       WHERE id = ?
     `).run(newQuantity, updatedValue, updatedCost, input.createdAt, input.fabricId);
+    const movementId = randomUUID();
     this.database.prepare(`
       INSERT INTO stock_movements (
         id, fabric_id, quantity_mm, reason, created_at, movement_type, reference, authorized_user
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
-      randomUUID(), input.fabricId, input.quantityMm, input.reason, input.createdAt,
+      movementId, input.fabricId, input.quantityMm, input.reason, input.createdAt,
       input.type, input.reference, input.authorizedUser,
     );
+    return movementId;
   }
 
   costForRemoval(fabricId: string, quantityMm: number): number {
