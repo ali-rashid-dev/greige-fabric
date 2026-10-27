@@ -39,8 +39,15 @@ GNOME Keyring or KDE Wallet must be available.
 Supplier records include a unique code, contact details, and an AP-derived
 outstanding balance. Supplier opening balances, purchase bills, payments, and
 authorized adjustments are posted to a double-entry ledger. Receiving a bill
-records the supplier purchase, inventory movement, weighted-average cost, and
-AP posting together. Payments are posted to the selected Cash or Bank account.
+records its supplier invoice number/reference and purchase date, inventory
+movement, weighted-average cost, and accounting posting together. Credit bills
+post to AP; cash and bank bills post to the selected payment account. Partial
+payments at receipt or later are tracked against an invoice and reduce its
+remaining due. Freight, loading, and other eligible acquisition costs can be
+entered and are allocated by material line value (by quantity if material cost
+is zero); integer minor-unit rounding remainders go to the largest remainder,
+with line order as a deterministic tie-breaker. Inventory cost uses half-up
+rounding in integer arithmetic. Payments are posted to the selected Cash or Bank account.
 Supplier statements show opening and closing balances for a date range, and the
 supplier subledger can be reconciled to the Accounts Payable control account.
 

@@ -18,7 +18,7 @@ import type {
 } from "../../shared/types";
 import { FabricServiceError } from "./errors";
 import { InventoryService } from "./inventory";
-import { calculateMinorValue, postJournal } from "./accounting";
+import { allocateMinorValue, calculateMinorValue, postJournal } from "./accounting";
 
 interface SupplierRow {
   id: string;
@@ -40,7 +40,12 @@ interface PurchaseRow {
   id: string;
   bill_number: string;
   reference: string;
+  purchase_date: string;
   total_minor: number;
+  additional_cost_minor: number;
+  additional_cost_description: string;
+  payment_mode: "credit" | "cash" | "bank";
+  paid_minor: number;
   created_at: string;
 }
 
@@ -51,11 +56,13 @@ interface PurchaseItemRow {
   name: string;
   quantity_mm: number;
   unit_cost_minor: number;
+  allocated_cost_minor: number;
   line_total_minor: number;
 }
 
 interface PaymentRow {
   id: string;
+  purchase_id: string | null;
   payment_number: string;
   account_code: string;
   amount_minor: number;
@@ -110,13 +117,15 @@ export class SupplierService {
   get(id: string): SupplierDetails {
     const supplier = this.getSupplier(id);
     const purchaseRows = this.database.prepare(`
-      SELECT id, bill_number, reference, total_minor, created_at
+      SELECT id, bill_number, reference, purchase_date, total_minor,
+             additional_cost_minor, additional_cost_description,
+             payment_mode, paid_minor, created_at
       FROM supplier_purchases WHERE supplier_id = ? ORDER BY created_at DESC
     `).all(id) as PurchaseRow[];
     const purchases: SupplierPurchase[] = purchaseRows.map((purchase) => {
       const items = this.database.prepare(`
         SELECT pi.id, pi.fabric_id, f.sku, f.name, pi.quantity_mm,
-               pi.unit_cost_minor, pi.line_total_minor
+               pi.unit_cost_minor, pi.allocated_cost_minor, pi.line_total_minor
         FROM supplier_purchase_items pi JOIN fabrics f ON f.id = pi.fabric_id
         WHERE pi.purchase_id = ? ORDER BY pi.rowid
       `).all(purchase.id) as PurchaseItemRow[];
@@ -124,7 +133,13 @@ export class SupplierService {
         id: purchase.id,
         billNumber: purchase.bill_number,
         reference: purchase.reference,
+        purchaseDate: purchase.purchase_date,
         totalMinor: purchase.total_minor,
+        additionalCostsMinor: purchase.additional_cost_minor,
+        additionalCostsDescription: purchase.additional_cost_description,
+        paymentMode: purchase.payment_mode,
+        paidMinor: purchase.paid_minor,
+        dueMinor: purchase.total_minor - purchase.paid_minor,
         createdAt: purchase.created_at,
         items: items.map((item) => ({
           id: item.id,
@@ -133,12 +148,13 @@ export class SupplierService {
           fabricName: item.name,
           quantityMm: item.quantity_mm,
           unitCostMinor: item.unit_cost_minor,
+          allocatedCostMinor: item.allocated_cost_minor,
           lineTotalMinor: item.line_total_minor,
         })),
       };
     });
     const paymentRows = this.database.prepare(`
-      SELECT id, payment_number, account_code, amount_minor, reference, note, created_at
+      SELECT id, purchase_id, payment_number, account_code, amount_minor, reference, note, created_at
       FROM supplier_payments WHERE supplier_id = ? ORDER BY created_at DESC
     `).all(id) as PaymentRow[];
     return {
@@ -146,6 +162,7 @@ export class SupplierService {
       purchases,
       payments: paymentRows.map((payment): SupplierPayment => ({
         id: payment.id,
+        purchaseId: payment.purchase_id ?? undefined,
         paymentNumber: payment.payment_number,
         account: payment.account_code === "1010" ? "bank" : "cash",
         amountMinor: payment.amount_minor,
@@ -199,26 +216,52 @@ export class SupplierService {
   receive(input: SupplierPurchaseInput): SupplierDetails {
     const id = randomUUID();
     const now = new Date().toISOString();
+    const purchaseTimestamp = `${input.purchaseDate}T00:00:00.000Z`;
     const lines = input.items.map((item) => ({
       fabricId: item.fabricId,
       quantityMm: Math.round(item.quantityMeters * 1000),
       unitCostMinor: Math.round(item.unitCost * 100),
     }));
-    const lineTotals = lines.map((line) => calculateMinorValue(line.quantityMm, line.unitCostMinor));
+    const materialLineTotals = lines.map((line) => calculateMinorValue(line.quantityMm, line.unitCostMinor));
+    const materialTotal = materialLineTotals.reduce((sum, lineTotal) => sum + lineTotal, 0);
+    const additionalCostMinor = Math.round(input.additionalCosts * 100);
+    if (!Number.isSafeInteger(materialTotal + additionalCostMinor)) {
+      throw new FabricServiceError("VALIDATION", "The purchase total exceeds the supported accounting precision.");
+    }
+    const allocationWeights = materialTotal > 0
+      ? materialLineTotals
+      : lines.map((line) => line.quantityMm);
+    const allocatedCosts = allocateMinorValue(additionalCostMinor, allocationWeights);
+    const lineTotals = materialLineTotals.map((lineTotal, index) => lineTotal + allocatedCosts[index]);
     const total = lineTotals.reduce((sum, lineTotal) => sum + lineTotal, 0);
-    if (!Number.isSafeInteger(total)) {
+    const paidMinor = Math.round(input.amountPaid * 100);
+    if (paidMinor > total) {
+      throw new FabricServiceError("VALIDATION", "The payment cannot exceed the supplier invoice total.");
+    }
+    if (input.paymentMode !== "credit" && paidMinor !== total) {
+      throw new FabricServiceError("VALIDATION", "Cash and bank purchases must be paid in full when received.");
+    }
+    if (!Number.isSafeInteger(total) || !Number.isSafeInteger(paidMinor)) {
       throw new FabricServiceError("VALIDATION", "The purchase total exceeds the supported accounting precision.");
     }
     const transaction = this.database.transaction(() => {
       this.requireSupplier(input.supplierId);
       this.database.prepare(`
-        INSERT INTO supplier_purchases (id, supplier_id, bill_number, reference, total_minor, created_at)
-        VALUES (?, ?, ?, ?, ?, ?)
-      `).run(id, input.supplierId, input.billNumber, input.reference, total, now);
+        INSERT INTO supplier_purchases (
+          id, supplier_id, bill_number, reference, total_minor, created_at,
+          purchase_date, additional_cost_minor, additional_cost_description,
+          payment_mode, paid_minor
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        id, input.supplierId, input.billNumber, input.reference, total, now,
+        input.purchaseDate, additionalCostMinor, input.additionalCostsDescription,
+        input.paymentMode, paidMinor,
+      );
       const insertItem = this.database.prepare(`
         INSERT INTO supplier_purchase_items (
-          id, purchase_id, fabric_id, quantity_mm, unit_cost_minor, line_total_minor
-        ) VALUES (?, ?, ?, ?, ?, ?)
+          id, purchase_id, fabric_id, quantity_mm, unit_cost_minor,
+          allocated_cost_minor, line_total_minor
+        ) VALUES (?, ?, ?, ?, ?, ?, ?)
       `);
       for (const [index, line] of lines.entries()) {
         const fabric = this.database.prepare(
@@ -227,7 +270,10 @@ export class SupplierService {
         if (!fabric) throw new FabricServiceError("NOT_FOUND", "Fabric product not found.");
         if (fabric.active !== 1) throw new FabricServiceError("CONFLICT", "Inactive fabrics cannot be received.");
         const lineTotal = lineTotals[index];
-        insertItem.run(randomUUID(), id, line.fabricId, line.quantityMm, line.unitCostMinor, lineTotal);
+        insertItem.run(
+          randomUUID(), id, line.fabricId, line.quantityMm, line.unitCostMinor,
+          allocatedCosts[index], lineTotal,
+        );
         this.inventory.postMovement({
           fabricId: line.fabricId,
           quantityMm: line.quantityMm,
@@ -236,13 +282,51 @@ export class SupplierService {
           reason: `Supplier receipt ${input.billNumber}`,
           authorizedUser: "Supplier receipt",
           createdAt: now,
-          incomingUnitCostMinor: line.unitCostMinor,
+          incomingValueMinor: lineTotal,
         });
       }
-      postJournal(this.database, "supplier_purchase", input.billNumber, now, [
-        { accountCode: "1200", debitMinor: total },
-        { accountCode: "2100", creditMinor: total, supplierId: input.supplierId },
-      ]);
+      const purchaseAccountLines = input.paymentMode === "credit"
+        ? [
+          { accountCode: "1200", debitMinor: total },
+          { accountCode: "2100", creditMinor: total, supplierId: input.supplierId },
+        ]
+        : [
+          { accountCode: "1200", debitMinor: total },
+          { accountCode: input.paymentMode === "cash" ? "1000" : "1010", creditMinor: total },
+        ];
+      postJournal(
+        this.database,
+        "supplier_purchase",
+        input.billNumber,
+        purchaseTimestamp,
+        purchaseAccountLines,
+        "Supplier receipt",
+      );
+      if (paidMinor > 0) {
+        const paymentId = randomUUID();
+        const paymentNumber = `PAY-${input.purchaseDate.replaceAll("-", "")}-${paymentId.slice(0, 6).toUpperCase()}`;
+        const paymentAccountCode = input.paymentMode === "cash"
+          ? "1000"
+          : input.paymentMode === "bank"
+            ? "1010"
+            : input.paymentAccount === "bank" ? "1010" : "1000";
+        if (input.paymentMode === "credit") {
+          postJournal(this.database, "supplier_payment", paymentNumber, purchaseTimestamp, [
+            { accountCode: "2100", supplierId: input.supplierId, debitMinor: paidMinor },
+            { accountCode: paymentAccountCode, creditMinor: paidMinor },
+          ], "Supplier receipt");
+        }
+        this.database.prepare(`
+          INSERT INTO supplier_payments (
+            id, supplier_id, purchase_id, payment_number, account_code,
+            amount_minor, reference, note, created_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `).run(
+          paymentId, input.supplierId, id, paymentNumber, paymentAccountCode,
+          paidMinor, input.reference || input.billNumber,
+          "Payment recorded at receipt", purchaseTimestamp,
+        );
+      }
     });
     try {
       transaction.immediate();
@@ -262,12 +346,24 @@ export class SupplierService {
     const now = new Date().toISOString();
     const transaction = this.database.transaction(() => {
       this.requireSupplier(input.supplierId);
+      if (input.purchaseId) {
+        const purchase = this.database.prepare(`
+          SELECT total_minor, paid_minor FROM supplier_purchases
+          WHERE id = ? AND supplier_id = ?
+        `).get(input.purchaseId, input.supplierId) as { total_minor: number; paid_minor: number } | undefined;
+        if (!purchase) throw new FabricServiceError("NOT_FOUND", "Supplier purchase not found.");
+        if (amount > purchase.total_minor - purchase.paid_minor) {
+          throw new FabricServiceError("VALIDATION", "Payment exceeds the remaining amount due on this purchase.");
+        }
+        this.database.prepare("UPDATE supplier_purchases SET paid_minor = paid_minor + ? WHERE id = ?")
+          .run(amount, input.purchaseId);
+      }
       this.database.prepare(`
         INSERT INTO supplier_payments (
-          id, supplier_id, payment_number, account_code, amount_minor, reference, note, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+          id, supplier_id, purchase_id, payment_number, account_code, amount_minor, reference, note, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
-        id, input.supplierId, paymentNumber, input.account === "bank" ? "1010" : "1000",
+        id, input.supplierId, input.purchaseId ?? null, paymentNumber, input.account === "bank" ? "1010" : "1000",
         amount, input.reference, input.note, now,
       );
       postJournal(this.database, "supplier_payment", paymentNumber, now, [

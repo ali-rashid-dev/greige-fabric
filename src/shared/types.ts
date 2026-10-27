@@ -119,7 +119,13 @@ export interface SupplierPurchase {
   id: string;
   billNumber: string;
   reference: string;
+  purchaseDate: string;
   totalMinor: number;
+  additionalCostsMinor: number;
+  additionalCostsDescription: string;
+  paymentMode: "credit" | "cash" | "bank";
+  paidMinor: number;
+  dueMinor: number;
   createdAt: string;
   items: Array<{
     id: string;
@@ -128,12 +134,14 @@ export interface SupplierPurchase {
     fabricName: string;
     quantityMm: number;
     unitCostMinor: number;
+    allocatedCostMinor: number;
     lineTotalMinor: number;
   }>;
 }
 
 export interface SupplierPayment {
   id: string;
+  purchaseId?: string;
   paymentNumber: string;
   account: "cash" | "bank";
   amountMinor: number;

@@ -698,6 +698,36 @@ td {
   background: #fbfcfa;
 }
 
+.purchase-form {
+  gap: 16px;
+}
+
+.purchase-lines-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: -7px;
+  color: #5d6b61;
+  font-size: 10px;
+}
+
+.purchase-line {
+  display: grid;
+  grid-template-columns: minmax(150px, 1.6fr) minmax(85px, 0.8fr) minmax(115px, 1fr) 24px;
+  align-items: end;
+  gap: 9px;
+}
+
+.remove-line-button {
+  width: 24px;
+  height: 34px;
+  border: 0;
+  border-radius: 4px;
+  background: #fbf0e9;
+  color: #a45d52;
+  font-size: 17px;
+}
+
 .statement-filter .primary-button {
   min-height: 35px;
 }
@@ -1325,6 +1355,14 @@ td {
 
   .statement-filter {
     grid-template-columns: 1fr;
+  }
+
+  .purchase-line {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .purchase-line > :first-child {
+    grid-column: 1 / -1;
   }
 
   .inventory-tabs {

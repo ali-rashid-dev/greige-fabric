@@ -131,16 +131,21 @@ export default function Home() {
   const [purchaseValues, setPurchaseValues] = useState({
     billNumber: "",
     reference: "",
-    fabricId: "",
-    quantityMeters: "",
-    unitCost: "",
+    purchaseDate: new Date().toISOString().slice(0, 10),
+    additionalCosts: "",
+    additionalCostsDescription: "",
+    paymentMode: "credit" as "credit" | "cash" | "bank",
+    amountPaid: "",
+    paymentAccount: "cash" as "cash" | "bank",
   });
+  const [purchaseItems, setPurchaseItems] = useState([{ fabricId: "", quantityMeters: "", unitCost: "" }]);
   const [paymentOpen, setPaymentOpen] = useState(false);
   const [paymentValues, setPaymentValues] = useState({
     amount: "",
     account: "cash" as "cash" | "bank",
     reference: "",
     note: "",
+    purchaseId: "",
   });
   const [supplierAdjustmentOpen, setSupplierAdjustmentOpen] = useState(false);
   const [supplierAdjustmentValues, setSupplierAdjustmentValues] = useState({
@@ -478,21 +483,45 @@ export default function Home() {
     setSaving(true);
     setError("");
     try {
+      const additionalCosts = Number(purchaseValues.additionalCosts || 0);
+      const purchaseTotal = purchaseItems.reduce((sum, item) => {
+        const quantityMm = Math.round(Number(item.quantityMeters) * 1000);
+        const unitCostMinor = Math.round(Number(item.unitCost) * 100);
+        return sum + Math.round(quantityMm * unitCostMinor / 1000);
+      }, Math.round(additionalCosts * 100));
       const result = await getDesktopApi().suppliers.receive({
         supplierId: supplierDetails.supplier.id,
         billNumber: purchaseValues.billNumber,
         reference: purchaseValues.reference,
-        items: [{
-          fabricId: purchaseValues.fabricId,
-          quantityMeters: Number(purchaseValues.quantityMeters),
-          unitCost: Number(purchaseValues.unitCost),
-        }],
+        purchaseDate: purchaseValues.purchaseDate,
+        additionalCosts: Number(purchaseValues.additionalCosts || 0),
+        additionalCostsDescription: purchaseValues.additionalCostsDescription,
+        paymentMode: purchaseValues.paymentMode,
+        amountPaid: purchaseValues.paymentMode === "credit"
+          ? Number(purchaseValues.amountPaid || 0)
+          : purchaseTotal / 100,
+        paymentAccount: purchaseValues.paymentAccount,
+        items: purchaseItems.map((item) => ({
+          fabricId: item.fabricId,
+          quantityMeters: Number(item.quantityMeters),
+          unitCost: Number(item.unitCost),
+        })),
       });
       if (!result.ok) throw new Error(result.error.message);
       setSupplierDetails(result.data);
       await Promise.all([refreshCatalog(), refreshManagement()]);
       setPurchaseOpen(false);
-      setPurchaseValues({ billNumber: "", reference: "", fabricId: "", quantityMeters: "", unitCost: "" });
+      setPurchaseValues({
+        billNumber: "",
+        reference: "",
+        purchaseDate: new Date().toISOString().slice(0, 10),
+        additionalCosts: "",
+        additionalCostsDescription: "",
+        paymentMode: "credit",
+        amountPaid: "",
+        paymentAccount: "cash",
+      });
+      setPurchaseItems([{ fabricId: "", quantityMeters: "", unitCost: "" }]);
       setNotice("Supplier bill and stock receipt posted together.");
     } catch (purchaseError) {
       setError(purchaseError instanceof Error ? purchaseError.message : "Unable to receive supplier purchase.");
@@ -509,6 +538,7 @@ export default function Home() {
     try {
       const result = await getDesktopApi().suppliers.pay({
         supplierId: supplierDetails.supplier.id,
+        ...(paymentValues.purchaseId ? { purchaseId: paymentValues.purchaseId } : {}),
         amount: Number(paymentValues.amount),
         account: paymentValues.account,
         reference: paymentValues.reference,
@@ -518,7 +548,7 @@ export default function Home() {
       setSupplierDetails(result.data);
       await refreshManagement();
       setPaymentOpen(false);
-      setPaymentValues({ amount: "", account: "cash", reference: "", note: "" });
+      setPaymentValues({ amount: "", account: "cash", reference: "", note: "", purchaseId: "" });
       setNotice("Supplier payment and Accounts Payable posting recorded.");
     } catch (paymentError) {
       setError(paymentError instanceof Error ? paymentError.message : "Unable to record supplier payment.");
@@ -932,8 +962,24 @@ export default function Home() {
           </div>
           <div className="detail-actions supplier-actions">
             <button className="secondary-button" onClick={() => openSupplierForm(supplierDetails.supplier)}>Edit supplier</button>
-            <button className="secondary-button" onClick={() => { setPurchaseValues({ billNumber: "", reference: "", fabricId: "", quantityMeters: "", unitCost: "" }); setPurchaseOpen(true); }}>Receive purchase</button>
-            <button className="secondary-button" onClick={() => setPaymentOpen(true)}>Record payment</button>
+            <button className="secondary-button" onClick={() => {
+              setPurchaseValues({
+                billNumber: "",
+                reference: "",
+                purchaseDate: new Date().toISOString().slice(0, 10),
+                additionalCosts: "",
+                additionalCostsDescription: "",
+                paymentMode: "credit",
+                amountPaid: "",
+                paymentAccount: "cash",
+              });
+              setPurchaseItems([{ fabricId: "", quantityMeters: "", unitCost: "" }]);
+              setPurchaseOpen(true);
+            }}>Receive purchase</button>
+            <button className="secondary-button" onClick={() => {
+              setPaymentValues({ amount: "", account: "cash", reference: "", note: "", purchaseId: "" });
+              setPaymentOpen(true);
+            }}>Record payment</button>
             <button className="secondary-button" onClick={() => setSupplierAdjustmentOpen(true)}>Adjust balance</button>
           </div>
           <form className="statement-filter" onSubmit={(event) => void loadSupplierStatement(event)}>
@@ -944,7 +990,7 @@ export default function Home() {
           {statement && <StatementTable statement={statement} />}
           <div className="history-block">
             <div className="section-heading compact"><div><h3>Purchase history</h3><p>Supplier receipts update inventory and AP in the same transaction.</p></div></div>
-            {supplierDetails.purchases.length === 0 ? <p className="muted-message">No purchases recorded.</p> : supplierDetails.purchases.map((purchase) => <div className="history-row" key={purchase.id}><div><strong>{purchase.billNumber}</strong><span>{formatDate(purchase.createdAt)} · {purchase.items.map((item) => `${item.sku} ${formatMeters(item.quantityMm)}`).join(", ")}</span></div><div className="history-price"><strong>{formatMoney(purchase.totalMinor)}</strong></div></div>)}
+            {supplierDetails.purchases.length === 0 ? <p className="muted-message">No purchases recorded.</p> : supplierDetails.purchases.map((purchase) => <div className="history-row" key={purchase.id}><div><strong>{purchase.billNumber} · {purchase.purchaseDate}</strong><span>{purchase.reference || purchase.paymentMode.toUpperCase()} · {purchase.items.map((item) => `${item.sku} ${formatMeters(item.quantityMm)}`).join(", ")}{purchase.additionalCostsMinor > 0 ? ` · Acquisition costs ${formatMoney(purchase.additionalCostsMinor)}` : ""}</span></div><div className="history-price"><strong>{formatMoney(purchase.totalMinor)}</strong><span>Paid {formatMoney(purchase.paidMinor)} · Due {formatMoney(purchase.dueMinor)}</span></div></div>)}
             <div className="section-heading compact"><div><h3>Payments</h3><p>Payments are posted against Cash or Bank.</p></div></div>
             {supplierDetails.payments.length === 0 ? <p className="muted-message">No payments recorded.</p> : supplierDetails.payments.map((payment) => <div className="history-row" key={payment.id}><div><strong>{payment.paymentNumber}</strong><span>{formatDate(payment.createdAt)} · {payment.account.toUpperCase()}{payment.reference ? ` · ${payment.reference}` : ""}</span></div><div className="history-price"><strong>{formatMoney(payment.amountMinor)}</strong></div></div>)}
           </div>
@@ -954,12 +1000,29 @@ export default function Home() {
       {purchaseOpen && supplierDetails && (
         <Modal title="Receive supplier purchase" onClose={() => setPurchaseOpen(false)}>
           {error && <div className="error-banner modal-error" role="alert">{error}</div>}
-          <form className="adjustment-form" onSubmit={(event) => void savePurchase(event)}>
-            <FormField label="Bill number" required><input required maxLength={80} value={purchaseValues.billNumber} onChange={(event) => setPurchaseValues({ ...purchaseValues, billNumber: event.target.value })} /></FormField>
-            <FormField label="Reference"><input maxLength={100} value={purchaseValues.reference} onChange={(event) => setPurchaseValues({ ...purchaseValues, reference: event.target.value })} /></FormField>
-            <FormField label="Fabric" required><select required value={purchaseValues.fabricId} onChange={(event) => setPurchaseValues({ ...purchaseValues, fabricId: event.target.value })}><option value="">Select fabric</option>{(stock?.fabrics ?? []).filter((fabric) => fabric.active).map((fabric) => <option key={fabric.id} value={fabric.id}>{fabric.sku} · {fabric.name}</option>)}</select></FormField>
-            <FormField label="Quantity" required><div className="input-suffix"><input required type="number" min="0.001" step="0.001" value={purchaseValues.quantityMeters} onChange={(event) => setPurchaseValues({ ...purchaseValues, quantityMeters: event.target.value })} /><span>m</span></div></FormField>
-            <FormField label="Unit cost" required><div className="input-prefix"><span>PKR / m</span><input required type="number" min="0" step="0.01" value={purchaseValues.unitCost} onChange={(event) => setPurchaseValues({ ...purchaseValues, unitCost: event.target.value })} /></div></FormField>
+          <form className="adjustment-form purchase-form" onSubmit={(event) => void savePurchase(event)}>
+            <div className="form-grid">
+              <FormField label="Supplier invoice" required><input required maxLength={80} value={purchaseValues.billNumber} onChange={(event) => setPurchaseValues({ ...purchaseValues, billNumber: event.target.value })} /></FormField>
+              <FormField label="Purchase date" required><input required type="date" value={purchaseValues.purchaseDate} onChange={(event) => setPurchaseValues({ ...purchaseValues, purchaseDate: event.target.value })} /></FormField>
+              <FormField label="Invoice reference"><input maxLength={100} value={purchaseValues.reference} onChange={(event) => setPurchaseValues({ ...purchaseValues, reference: event.target.value })} placeholder="Supplier invoice / delivery note" /></FormField>
+            </div>
+            <div className="purchase-lines-heading"><strong>Fabric lines</strong><button className="secondary-button table-button" type="button" onClick={() => setPurchaseItems([...purchaseItems, { fabricId: "", quantityMeters: "", unitCost: "" }])}>+ Add fabric</button></div>
+            {purchaseItems.map((item, index) => (
+              <div className="purchase-line" key={index}>
+                <FormField label={`Fabric ${index + 1}`} required><select required value={item.fabricId} onChange={(event) => setPurchaseItems(purchaseItems.map((row, rowIndex) => rowIndex === index ? { ...row, fabricId: event.target.value } : row))}><option value="">Select fabric</option>{(stock?.fabrics ?? []).filter((fabric) => fabric.active && (fabric.id === item.fabricId || !purchaseItems.some((row, rowIndex) => rowIndex !== index && row.fabricId === fabric.id))).map((fabric) => <option key={fabric.id} value={fabric.id}>{fabric.sku} · {fabric.name}</option>)}</select></FormField>
+                <FormField label="Quantity" required><div className="input-suffix"><input required type="number" min="0.001" step="0.001" value={item.quantityMeters} onChange={(event) => setPurchaseItems(purchaseItems.map((row, rowIndex) => rowIndex === index ? { ...row, quantityMeters: event.target.value } : row))} /><span>m</span></div></FormField>
+                <FormField label="Unit cost" required><div className="input-prefix"><span>PKR/m</span><input required type="number" min="0" step="0.01" value={item.unitCost} onChange={(event) => setPurchaseItems(purchaseItems.map((row, rowIndex) => rowIndex === index ? { ...row, unitCost: event.target.value } : row))} /></div></FormField>
+                {purchaseItems.length > 1 && <button className="remove-line-button" type="button" aria-label={`Remove fabric line ${index + 1}`} onClick={() => setPurchaseItems(purchaseItems.filter((_, rowIndex) => rowIndex !== index))}>×</button>}
+              </div>
+            ))}
+            <div className="form-grid">
+              <FormField label="Freight / loading / other costs"><div className="input-prefix"><span>PKR</span><input type="number" min="0" step="0.01" value={purchaseValues.additionalCosts} onChange={(event) => setPurchaseValues({ ...purchaseValues, additionalCosts: event.target.value })} /></div></FormField>
+              <FormField label="Cost description"><input maxLength={120} value={purchaseValues.additionalCostsDescription} onChange={(event) => setPurchaseValues({ ...purchaseValues, additionalCostsDescription: event.target.value })} placeholder="Freight, loading, handling…" /></FormField>
+              <FormField label="Purchase type" required><select value={purchaseValues.paymentMode} onChange={(event) => setPurchaseValues({ ...purchaseValues, paymentMode: event.target.value as "credit" | "cash" | "bank" })}><option value="credit">Credit</option><option value="cash">Cash</option><option value="bank">Bank</option></select></FormField>
+              {purchaseValues.paymentMode === "credit" && <FormField label="Paid now" hint="Leave zero to keep the full invoice payable."><div className="input-prefix"><span>PKR</span><input type="number" min="0" step="0.01" value={purchaseValues.amountPaid} onChange={(event) => setPurchaseValues({ ...purchaseValues, amountPaid: event.target.value })} /></div></FormField>}
+              {purchaseValues.paymentMode === "credit" && Number(purchaseValues.amountPaid) > 0 && <FormField label="Pay from" required><select value={purchaseValues.paymentAccount} onChange={(event) => setPurchaseValues({ ...purchaseValues, paymentAccount: event.target.value as "cash" | "bank" })}><option value="cash">Cash</option><option value="bank">Bank</option></select></FormField>}
+            </div>
+            <p className="form-footnote">Additional acquisition costs are allocated to fabric lines in proportion to material cost (or quantity when material cost is zero), with rounding remainders assigned deterministically. Weighted-average stock cost is recalculated on receipt.</p>
             <div className="modal-actions"><button className="secondary-button" type="button" onClick={() => setPurchaseOpen(false)}>Cancel</button><button className="primary-button" disabled={saving}>{saving ? "Posting…" : "Post purchase"}</button></div>
           </form>
         </Modal>
@@ -969,6 +1032,15 @@ export default function Home() {
         <Modal title="Record supplier payment" onClose={() => setPaymentOpen(false)}>
           {error && <div className="error-banner modal-error" role="alert">{error}</div>}
           <form className="adjustment-form" onSubmit={(event) => void savePayment(event)}>
+            <FormField label="Purchase invoice"><select value={paymentValues.purchaseId} onChange={(event) => {
+              const purchaseId = event.target.value;
+              const purchase = supplierDetails.purchases.find((item) => item.id === purchaseId);
+              setPaymentValues({
+                ...paymentValues,
+                purchaseId,
+                amount: purchase && purchase.dueMinor > 0 ? (purchase.dueMinor / 100).toFixed(2) : paymentValues.amount,
+              });
+            }}><option value="">Unallocated supplier payment</option>{supplierDetails.purchases.filter((purchase) => purchase.dueMinor > 0).map((purchase) => <option key={purchase.id} value={purchase.id}>{purchase.billNumber} · Due {formatMoney(purchase.dueMinor)}</option>)}</select></FormField>
             <FormField label="Amount" required><div className="input-prefix"><span>PKR</span><input required type="number" min="0.01" step="0.01" value={paymentValues.amount} onChange={(event) => setPaymentValues({ ...paymentValues, amount: event.target.value })} /></div></FormField>
             <FormField label="Paid from" required><select value={paymentValues.account} onChange={(event) => setPaymentValues({ ...paymentValues, account: event.target.value as "cash" | "bank" })}><option value="cash">Cash</option><option value="bank">Bank</option></select></FormField>
             <FormField label="Reference"><input maxLength={100} value={paymentValues.reference} onChange={(event) => setPaymentValues({ ...paymentValues, reference: event.target.value })} /></FormField>

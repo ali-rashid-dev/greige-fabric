@@ -120,6 +120,14 @@ export const supplierPurchaseSchema = z.object({
   supplierId: z.string().uuid(),
   billNumber: z.string().trim().min(1, "Bill number is required").max(80),
   reference: z.string().trim().max(100).default(""),
+  purchaseDate: z.string().date(),
+  additionalCosts: z.number().finite().nonnegative().max(1_000_000_000)
+    .refine((value) => hasPrecision(value, 100), "Use up to 2 decimal places"),
+  additionalCostsDescription: z.string().trim().max(120).default(""),
+  paymentMode: z.enum(["credit", "cash", "bank"]),
+  amountPaid: z.number().finite().nonnegative().max(1_000_000_000)
+    .refine((value) => hasPrecision(value, 100), "Use up to 2 decimal places"),
+  paymentAccount: z.enum(["cash", "bank"]).default("cash"),
   items: z.array(z.object({
     fabricId: z.string().uuid(),
     quantityMeters: z.number().finite().positive().max(1_000_000)
@@ -139,10 +147,19 @@ export const supplierPurchaseSchema = z.object({
     }
     ids.add(item.fabricId);
   }
+}).superRefine(({ paymentMode, amountPaid }, context) => {
+  if (paymentMode !== "credit" && amountPaid <= 0) {
+    context.addIssue({
+      code: "custom",
+      path: ["amountPaid"],
+      message: "Cash and bank purchases must be paid in full when received.",
+    });
+  }
 });
 
 export const supplierPaymentSchema = z.object({
   supplierId: z.string().uuid(),
+  purchaseId: z.string().uuid().optional(),
   amount: z.number().finite().positive().max(1_000_000_000)
     .refine((value) => hasPrecision(value, 100), "Use up to 2 decimal places"),
   account: z.enum(["cash", "bank"]),

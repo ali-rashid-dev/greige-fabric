@@ -193,6 +193,10 @@ describe("fabric quality catalog", () => {
         supplierId: supplier.id,
         billNumber: "BILL-1001",
         reference: "Delivery note DN-1001",
+        purchaseDate: "2026-10-27",
+        additionalCosts: 0,
+        paymentMode: "credit",
+        amountPaid: 0,
         items: [{ fabricId: fabric.id, quantityMeters: 1000, unitCost: 145 }],
       }));
       expect(service.get(fabric.id).fabric.stockMm).toBe(1_000_000);
@@ -266,6 +270,100 @@ describe("fabric quality catalog", () => {
         authorizedUser: "Owner",
         quantityMm: 2_500_000,
       });
+
+    } finally {
+      close();
+    }
+  });
+
+  it("calculates weighted-average cost for purchases and allocates extra costs", async () => {
+    const { service, inventory, suppliers, close } = await createService();
+    try {
+      const fabric = service.create(fabricInputSchema.parse(sampleFabric));
+      inventory.openStock({
+        fabricId: fabric.id,
+        quantityMeters: 1000,
+        unitCost: 120,
+        reference: "OPEN-COST",
+        reason: "Opening stock",
+      }, "Owner");
+      const supplier = suppliers.create(supplierInputSchema.parse({
+        code: "SUP-COST",
+        name: "Costing Supplier",
+        phone: "03000000000",
+        openingBalance: 0,
+      }), "System");
+
+      const details = suppliers.receive(supplierPurchaseSchema.parse({
+        supplierId: supplier.id,
+        billNumber: "BILL-WAC-1",
+        reference: "INV-WAC-1",
+        purchaseDate: "2026-10-27",
+        additionalCosts: 0,
+        paymentMode: "credit",
+        amountPaid: 0,
+        items: [{ fabricId: fabric.id, quantityMeters: 500, unitCost: 150 }],
+      }));
+      const report = inventory.report();
+      expect(service.get(fabric.id).fabric.stockMm).toBe(1_500_000);
+      expect(report.valuation[0].unitCostMinor).toBe(13_000);
+      expect(report.valuation[0].valueMinor).toBe(19_500_000);
+      expect(details.purchases[0]).toMatchObject({
+        totalMinor: 7_500_000,
+        paidMinor: 0,
+        dueMinor: 7_500_000,
+      });
+
+      const otherFabric = service.create(fabricInputSchema.parse({
+        ...sampleFabric,
+        sku: "GF-0002",
+        name: "Cotton 2",
+      }));
+      const cashPurchase = suppliers.receive(supplierPurchaseSchema.parse({
+        supplierId: supplier.id,
+        billNumber: "BILL-CASH-1",
+        purchaseDate: "2026-10-27",
+        additionalCosts: 0,
+        paymentMode: "cash",
+        amountPaid: 1000,
+        items: [{ fabricId: otherFabric.id, quantityMeters: 10, unitCost: 100 }],
+      }));
+      expect(cashPurchase.purchases.find((purchase) => purchase.billNumber === "BILL-CASH-1"))
+        .toMatchObject({ totalMinor: 100_000, paidMinor: 100_000, dueMinor: 0 });
+      expect(cashPurchase.supplier.outstandingMinor).toBe(7_500_000);
+
+      const allocated = suppliers.receive(supplierPurchaseSchema.parse({
+        supplierId: supplier.id,
+        billNumber: "BILL-WAC-2",
+        reference: "INV-WAC-2",
+        purchaseDate: "2026-10-27",
+        additionalCosts: 300,
+        additionalCostsDescription: "Freight and loading",
+        paymentMode: "credit",
+        amountPaid: 150,
+        paymentAccount: "bank",
+        items: [
+          { fabricId: fabric.id, quantityMeters: 100, unitCost: 100 },
+          { fabricId: otherFabric.id, quantityMeters: 200, unitCost: 200 },
+        ],
+      }));
+      const secondPurchase = allocated.purchases.find((purchase) => purchase.billNumber === "BILL-WAC-2");
+      expect(secondPurchase?.additionalCostsMinor).toBe(30_000);
+      expect(secondPurchase?.items.reduce((sum, item) => sum + item.allocatedCostMinor, 0)).toBe(30_000);
+      expect(secondPurchase?.paidMinor).toBe(15_000);
+      expect(secondPurchase?.dueMinor).toBe(5_015_000);
+      expect(allocated.supplier.outstandingMinor).toBe(12_515_000);
+      const firstPurchase = allocated.purchases.find((purchase) => purchase.billNumber === "BILL-WAC-1");
+      const paymentResult = suppliers.pay(supplierPaymentSchema.parse({
+        supplierId: supplier.id,
+        purchaseId: firstPurchase?.id,
+        amount: 75_000,
+        account: "cash",
+        reference: "Paid first bill",
+      }));
+      expect(paymentResult.purchases.find((purchase) => purchase.id === firstPurchase?.id)?.dueMinor).toBe(0);
+      expect(paymentResult.supplier.outstandingMinor).toBe(5_015_000);
+      expect(suppliers.reconcile().differenceMinor).toBe(0);
     } finally {
       close();
     }

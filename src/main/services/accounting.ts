@@ -26,6 +26,36 @@ export function calculateProportionalValue(totalMinor: number, part: number, who
   return roundedDivision(BigInt(totalMinor) * BigInt(part), BigInt(whole));
 }
 
+export function allocateMinorValue(totalMinor: number, weights: number[]): number[] {
+  if (!Number.isSafeInteger(totalMinor) || totalMinor < 0 || weights.length === 0) {
+    throw new FabricServiceError("VALIDATION", "Acquisition costs cannot be allocated to the supplied purchase lines.");
+  }
+  const totalWeight = weights.reduce((sum, weight) => sum + BigInt(weight), 0n);
+  if (totalWeight <= 0n || weights.some((weight) => !Number.isSafeInteger(weight) || weight < 0)) {
+    throw new FabricServiceError("VALIDATION", "Purchase lines must have valid quantities and costs.");
+  }
+  const total = BigInt(totalMinor);
+  const allocations = weights.map((weight) => {
+    const numerator = total * BigInt(weight);
+    return {
+      amount: numerator / totalWeight,
+      remainder: numerator % totalWeight,
+    };
+  });
+  let remainder = total - allocations.reduce((sum, item) => sum + item.amount, 0n);
+  const order = allocations.map((item, index) => ({ index, remainder: item.remainder }))
+    .sort((left, right) => left.remainder > right.remainder ? -1 : left.remainder < right.remainder ? 1 : left.index - right.index);
+  for (let index = 0; remainder > 0n; index += 1, remainder -= 1n) {
+    allocations[order[index].index].amount += 1n;
+  }
+  return allocations.map((item) => {
+    if (item.amount > BigInt(Number.MAX_SAFE_INTEGER)) {
+      throw new FabricServiceError("VALIDATION", "Allocated acquisition costs exceed supported accounting precision.");
+    }
+    return Number(item.amount);
+  });
+}
+
 export function postJournal(
   database: Database.Database,
   transactionType: string,

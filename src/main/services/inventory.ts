@@ -111,6 +111,7 @@ export class InventoryService {
     authorizedUser: string;
     createdAt: string;
     incomingUnitCostMinor?: number;
+    incomingValueMinor?: number;
   }): void {
     const current = this.getStock(input.fabricId);
     const newQuantity = current.stock_qty_mm + input.quantityMm;
@@ -119,7 +120,9 @@ export class InventoryService {
     }
 
     let updatedValue = current.stock_value_minor;
-    if (input.incomingUnitCostMinor !== undefined) {
+    if (input.incomingValueMinor !== undefined) {
+      updatedValue += input.incomingValueMinor;
+    } else if (input.incomingUnitCostMinor !== undefined) {
       updatedValue += calculateMinorValue(input.quantityMm, input.incomingUnitCostMinor);
     } else if (input.quantityMm > 0) {
       updatedValue += calculateMinorValue(input.quantityMm, current.purchase_cost_minor);
