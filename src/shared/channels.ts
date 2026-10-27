@@ -44,4 +44,9 @@ export const channels = {
   accountingOpeningBalances: "accounting:opening-balances",
   accountingReverseEntry: "accounting:reverse-entry",
   accountingReconcile: "accounting:reconcile",
+  expenseCategories: "expenses:categories",
+  addExpenseCategory: "expenses:add-category",
+  recordExpense: "expenses:record",
+  listExpenses: "expenses:list",
+  expenseReport: "expenses:report",
 } as const;

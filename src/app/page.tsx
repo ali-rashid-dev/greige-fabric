@@ -6,6 +6,7 @@ import { businessConfig } from "@/config/business";
 import { getDesktopApi } from "@/lib/desktop-api";
 import { fabricInputSchema } from "@/shared/contracts";
 import SalesPos from "./sales-pos";
+import ExpensesManagement from "./expenses-management";
 import type {
   Fabric,
   FabricDetails,
@@ -24,7 +25,7 @@ import type {
   SupplierStatement,
 } from "@/shared/types";
 
-type Section = "pos" | "fabrics" | "stock" | "suppliers" | "customers" | "invoices";
+type Section = "pos" | "fabrics" | "stock" | "suppliers" | "customers" | "invoices" | "expenses";
 type StatusFilter = "active" | "all" | "inactive" | "low-stock";
 type InventoryView = "overview" | "movements" | "low-stock" | "valuation";
 type CustomerTab = "overview" | "sales" | "payments" | "ledger";
@@ -893,7 +894,9 @@ export default function Home() {
         ? "Suppliers"
         : section === "customers"
           ? customerDetails?.customer.name ?? "Customers"
-          : "Sales history";
+          : section === "expenses"
+            ? "Expenses & cashbook"
+            : "Sales history";
 
   return (
     <main className="app-shell">
@@ -924,6 +927,9 @@ export default function Home() {
           </button>
           <button className={section === "invoices" ? "nav-item active" : "nav-item"} onClick={() => setSection("invoices")}>
             <span className="nav-icon">▧</span> Sales history
+          </button>
+          <button className={section === "expenses" ? "nav-item active" : "nav-item"} onClick={() => setSection("expenses")}>
+            <span className="nav-icon">₨</span> Expenses & cashbook
           </button>
         </nav>
         <div className="sidebar-bottom">
@@ -981,6 +987,7 @@ export default function Home() {
           )}
 
           {section === "pos" && <SalesPos customers={customers} onPosted={handleSalePosted} />}
+          {section === "expenses" && <ExpensesManagement />}
 
           {section === "fabrics" && (
             <>

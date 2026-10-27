@@ -12,6 +12,9 @@ import type {
   AccountingOpeningBalancesInput,
   AccountingTrialBalanceInput,
   AccountingUpdateAccountInput,
+  ExpenseCategoryInput,
+  ExpenseInput,
+  ExpenseRangeInput,
   FabricFiltersInput,
   FabricIdInput,
   FabricInput,
@@ -276,6 +279,42 @@ export interface AccountingReconciliation {
   isBalanced: boolean;
 }
 
+export interface ExpenseCategory {
+  code: string;
+  name: string;
+  accountCode: string;
+  accountName: string;
+}
+
+export interface Expense {
+  id: string;
+  expenseNumber: string;
+  categoryCode: string;
+  categoryName: string;
+  expenseAccountCode: string;
+  paymentAccountCode: string;
+  paymentAccountName: string;
+  amountMinor: number;
+  expenseDate: string;
+  description: string;
+  createdAt: string;
+}
+
+export interface ExpenseCategoryReportLine {
+  categoryCode: string;
+  categoryName: string;
+  accountCode: string;
+  amountMinor: number;
+  expenseCount: number;
+}
+
+export interface ExpenseReport {
+  from: string;
+  to: string;
+  categories: ExpenseCategoryReportLine[];
+  totalMinor: number;
+}
+
 export interface SupplierStatementLine {
   transactionType: string;
   reference: string;
@@ -420,6 +459,13 @@ export interface DesktopApi {
     openingBalances(input: AccountingOpeningBalancesInput): Promise<IpcResult<JournalEntry>>;
     reverseEntry(input: { id: string; reason: string }): Promise<IpcResult<JournalEntry>>;
     reconcile(): Promise<IpcResult<AccountingReconciliation>>;
+  };
+  expenses: {
+    categories(): Promise<IpcResult<ExpenseCategory[]>>;
+    addCategory(input: ExpenseCategoryInput): Promise<IpcResult<ExpenseCategory>>;
+    record(input: ExpenseInput): Promise<IpcResult<Expense>>;
+    list(input: ExpenseRangeInput): Promise<IpcResult<Expense[]>>;
+    report(input: ExpenseRangeInput): Promise<IpcResult<ExpenseReport>>;
   };
 }
 

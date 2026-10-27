@@ -12,6 +12,9 @@ import {
   accountingOpeningBalancesSchema,
   accountingTrialBalanceSchema,
   accountingUpdateAccountSchema,
+  expenseCategoryInputSchema,
+  expenseInputSchema,
+  expenseRangeSchema,
   customerInputSchema,
   customerListSchema,
   customerReceiptSchema,
@@ -45,6 +48,7 @@ import { SupplierService } from "../services/suppliers";
 import { FabricService } from "../services/fabrics";
 import { CustomerService } from "../services/customers";
 import { AccountingService } from "../services/accounting";
+import { ExpenseService } from "../services/expenses";
 import { isTrustedSender } from "./security";
 
 function failure<T>(code: IpcErrorCode, message: string): IpcResult<T> {
@@ -93,6 +97,7 @@ export function registerIpcHandlers(
   ownerAuth: OwnerAuthService,
   customers: CustomerService,
   accounting: AccountingService,
+  expenses: ExpenseService,
   developmentUrl: string | undefined,
   productionFileUrl: string,
 ): void {
@@ -312,5 +317,25 @@ export function registerIpcHandlers(
   registerHandler(
     channels.accountingReconcile, accounting, developmentUrl, productionFileUrl,
     z.undefined(), (service) => service.reconcile(),
+  );
+  registerHandler(
+    channels.expenseCategories, expenses, developmentUrl, productionFileUrl,
+    z.undefined(), (service) => service.categories(),
+  );
+  registerHandler(
+    channels.addExpenseCategory, expenses, developmentUrl, productionFileUrl,
+    expenseCategoryInputSchema, (service, input) => service.addCategory(input),
+  );
+  registerHandler(
+    channels.recordExpense, expenses, developmentUrl, productionFileUrl,
+    expenseInputSchema, (service, input) => service.record(input),
+  );
+  registerHandler(
+    channels.listExpenses, expenses, developmentUrl, productionFileUrl,
+    expenseRangeSchema, (service, input) => service.list(input),
+  );
+  registerHandler(
+    channels.expenseReport, expenses, developmentUrl, productionFileUrl,
+    expenseRangeSchema, (service, input) => service.report(input),
   );
 }

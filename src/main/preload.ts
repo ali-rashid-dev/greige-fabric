@@ -64,6 +64,13 @@ const api: DesktopApi = {
     reverseEntry: (input) => ipcRenderer.invoke(channels.accountingReverseEntry, input),
     reconcile: () => ipcRenderer.invoke(channels.accountingReconcile),
   },
+  expenses: {
+    categories: () => ipcRenderer.invoke(channels.expenseCategories),
+    addCategory: (input) => ipcRenderer.invoke(channels.addExpenseCategory, input),
+    record: (input) => ipcRenderer.invoke(channels.recordExpense, input),
+    list: (input) => ipcRenderer.invoke(channels.listExpenses, input),
+    report: (input) => ipcRenderer.invoke(channels.expenseReport, input),
+  },
 };
 
 contextBridge.exposeInMainWorld("electronAPI", api);

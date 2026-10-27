@@ -20,6 +20,9 @@ import type {
   SupplierStatement,
   StockSummary,
   TrialBalance,
+  Expense,
+  ExpenseCategory,
+  ExpenseReport,
 } from "./types";
 
 function hasPrecision(value: number, scale: number): boolean {
@@ -388,6 +391,28 @@ export const accountingOpeningBalancesSchema = z.object({
   lines: accountingJournalFields.lines,
 }).superRefine(requireBalancedJournal);
 
+export const expenseInputSchema = z.object({
+  categoryCode: z.string().trim().min(2).max(40),
+  paymentAccountCode: z.string().trim().min(1).max(40),
+  amount: z.number().finite().positive().max(1_000_000_000)
+    .refine((value) => hasPrecision(value, 100), "Use up to 2 decimal places"),
+  expenseDate: z.string().date(),
+  description: z.string().trim().min(1, "Enter an expense description").max(240),
+});
+
+export const expenseCategoryInputSchema = z.object({
+  code: z.string().trim().toLowerCase().min(2).max(40).regex(/^[a-z0-9][a-z0-9_-]*$/),
+  name: z.string().trim().min(1).max(120),
+});
+
+export const expenseRangeSchema = z.object({
+  from: z.string().date(),
+  to: z.string().date(),
+}).refine(({ from, to }) => from <= to, {
+  path: ["to"],
+  message: "End date must be on or after start date.",
+});
+
 export const pinSchema = z.object({
   pin: z.string().min(6, "PIN must be at least 6 characters").max(64)
     .regex(/^\d+$/, "PIN must contain digits only"),
@@ -428,6 +453,9 @@ export type AccountingGeneralLedgerInput = z.infer<typeof accountingGeneralLedge
 export type AccountingEntryListInput = z.input<typeof accountingEntryListSchema>;
 export type AccountingManualEntryInput = z.infer<typeof accountingManualEntrySchema>;
 export type AccountingOpeningBalancesInput = z.infer<typeof accountingOpeningBalancesSchema>;
+export type ExpenseInput = z.infer<typeof expenseInputSchema>;
+export type ExpenseCategoryInput = z.infer<typeof expenseCategoryInputSchema>;
+export type ExpenseRangeInput = z.infer<typeof expenseRangeSchema>;
 
 export type IpcErrorCode =
   | "VALIDATION"
@@ -487,4 +515,9 @@ export interface IpcContract {
   "accounting:opening-balances": { input: AccountingOpeningBalancesInput; output: JournalEntry };
   "accounting:reverse-entry": { input: { id: string; reason: string }; output: JournalEntry };
   "accounting:reconcile": { input: undefined; output: AccountingReconciliation };
+  "expenses:categories": { input: undefined; output: ExpenseCategory[] };
+  "expenses:add-category": { input: ExpenseCategoryInput; output: ExpenseCategory };
+  "expenses:record": { input: ExpenseInput; output: Expense };
+  "expenses:list": { input: ExpenseRangeInput; output: Expense[] };
+  "expenses:report": { input: ExpenseRangeInput; output: ExpenseReport };
 }

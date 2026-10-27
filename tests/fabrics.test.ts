@@ -8,6 +8,7 @@ import { InventoryService } from "../src/main/services/inventory";
 import { SupplierService } from "../src/main/services/suppliers";
 import { CustomerService } from "../src/main/services/customers";
 import { AccountingService } from "../src/main/services/accounting";
+import { ExpenseService } from "../src/main/services/expenses";
 import {
   fabricInputSchema,
   stockAdjustmentSchema,
@@ -29,6 +30,7 @@ async function createService(): Promise<{
   suppliers: SupplierService;
   customers: CustomerService;
   accounting: AccountingService;
+  expenses: ExpenseService;
   close: () => void;
 }> {
   const directory = await mkdtemp(path.join(os.tmpdir(), "greige-fabrics-"));
@@ -41,6 +43,7 @@ async function createService(): Promise<{
     suppliers: new SupplierService(database),
     customers: new CustomerService(database),
     accounting: new AccountingService(database),
+    expenses: new ExpenseService(database),
     close: () => database.close(),
   };
 }
@@ -117,7 +120,7 @@ describe("fabric quality catalog", () => {
       }));
 
       const expenseAccount = accounting.createAccount({
-        code: "5300",
+        code: "5800",
         name: "Office Expenses",
         accountType: "expense",
         isPaymentAccount: false,
@@ -128,19 +131,19 @@ describe("fabric quality catalog", () => {
         reference: "EXP-LEDGER-1",
         date: "2026-10-27",
         lines: [
-          { accountCode: "5300", debitMinor: 10_000 },
+          { accountCode: "5800", debitMinor: 10_000 },
           { accountCode: "1000", creditMinor: 10_000 },
         ],
       });
       expect(expense?.lines).toHaveLength(2);
-      expect(accounting.trialBalance("2026-10-26").lines.find((line) => line.accountCode === "5300"))
+      expect(accounting.trialBalance("2026-10-26").lines.find((line) => line.accountCode === "5800"))
         .toMatchObject({ debitMinor: 0, creditMinor: 0 });
       expect(() => accounting.postEntry({
         sourceId: "expense-ledger-1",
         reference: "EXP-LEDGER-1",
         date: "2026-10-27",
         lines: [
-          { accountCode: "5300", debitMinor: 10_000 },
+          { accountCode: "5800", debitMinor: 10_000 },
           { accountCode: "1000", creditMinor: 10_000 },
         ],
       })).toThrow();
@@ -149,7 +152,7 @@ describe("fabric quality catalog", () => {
       expect(trialBalance.isBalanced).toBe(true);
       expect(trialBalance.totalDebitsMinor).toBe(trialBalance.totalCreditsMinor);
       expect(accounting.generalLedger({
-        accountCode: "5300",
+        accountCode: "5800",
         from: "2026-10-27",
         to: "2026-10-27",
       }).closingBalanceMinor).toBe(10_000);
@@ -195,10 +198,102 @@ describe("fabric quality catalog", () => {
         reference: "EXP-CLOSED",
         date: "2026-10-27",
         lines: [
-          { accountCode: "5300", debitMinor: 100 },
+          { accountCode: "5800", debitMinor: 100 },
           { accountCode: "1000", creditMinor: 100 },
         ],
       })).toThrow(/closed/);
+    } finally {
+      close();
+    }
+  });
+
+  it("records a PKR 2,000 cash expense with matching cash and expense ledger balances", async () => {
+    const { database, accounting, expenses, close } = await createService();
+    try {
+      accounting.postOpeningBalances({
+        sourceId: "cash-opening-expense-acceptance",
+        date: "2026-10-27",
+        lines: [
+          { accountCode: "1000", debitMinor: 1_000_000 },
+          { accountCode: "3000", creditMinor: 1_000_000 },
+        ],
+      });
+
+      const expense = expenses.record({
+        categoryCode: "rent",
+        paymentAccountCode: "1000",
+        amount: 2_000,
+        expenseDate: "2026-10-27",
+        description: "Shop rent",
+      });
+      expect(expense).toMatchObject({
+        categoryName: "Rent",
+        paymentAccountName: "Cash",
+        amountMinor: 200_000,
+        expenseDate: "2026-10-27",
+      });
+      const cashbook = accounting.generalLedger({
+        accountCode: "1000",
+        from: "2026-10-27",
+        to: "2026-10-27",
+      });
+      const rentLedger = accounting.generalLedger({
+        accountCode: "5200",
+        from: "2026-10-27",
+        to: "2026-10-27",
+      });
+      expect(cashbook.closingBalanceMinor).toBe(800_000);
+      expect(cashbook.lines.at(-1)).toMatchObject({ creditMinor: 200_000 });
+      expect(rentLedger.closingBalanceMinor).toBe(200_000);
+      expect(rentLedger.lines.at(-1)).toMatchObject({ debitMinor: 200_000 });
+      expect(expenses.list({ from: "2026-10-27", to: "2026-10-27" })).toHaveLength(1);
+      expect(expenses.report({ from: "2026-10-27", to: "2026-10-27" })).toMatchObject({
+        totalMinor: 200_000,
+        categories: expect.arrayContaining([expect.objectContaining({
+          categoryCode: "rent",
+          amountMinor: 200_000,
+          expenseCount: 1,
+        })]),
+      });
+      expect(() => expenses.record({
+        categoryCode: "rent",
+        paymentAccountCode: "1300",
+        amount: 10,
+        expenseDate: "2026-10-27",
+        description: "Receivable is not a payment account",
+      })).toThrow(/configured cash or payment account/);
+      expect(database.prepare(`
+        SELECT COUNT(*) AS count FROM ledger_transactions
+        WHERE transaction_type = 'expense' AND source_key = ?
+      `).get(`expense:${expense.id}`)).toMatchObject({ count: 1 });
+      expect(accounting.trialBalance("2026-10-27").isBalanced).toBe(true);
+
+      const expenseEntry = accounting.listEntries().find((entry) => entry.reference === expense.expenseNumber);
+      expect(expenseEntry).toBeDefined();
+      accounting.reverseEntry(expenseEntry!.id, "Expense entered in error");
+      expect(expenses.report({ from: "2026-10-27", to: "2026-10-27" }).totalMinor).toBe(0);
+      expect(accounting.generalLedger({
+        accountCode: "1000",
+        from: "2026-10-27",
+        to: "2026-10-27",
+      }).closingBalanceMinor).toBe(1_000_000);
+
+      const category = expenses.addCategory({ code: "repairs", name: "Repairs and maintenance" });
+      expect(category).toMatchObject({ code: "repairs", name: "Repairs and maintenance" });
+      expect(accounting.listAccounts().find((account) => account.code === category.accountCode))
+        .toMatchObject({ accountType: "expense", normalBalance: "debit" });
+
+      const savedCount = expenses.list({ from: "2026-10-27", to: "2026-10-27" }).length;
+      accounting.closePeriod("2026-10");
+      expect(() => expenses.record({
+        categoryCode: "rent",
+        paymentAccountCode: "1000",
+        amount: 25,
+        expenseDate: "2026-10-27",
+        description: "Expense in a closed period",
+      })).toThrow(/closed/);
+      expect(expenses.list({ from: "2026-10-27", to: "2026-10-27" })).toHaveLength(savedCount);
+      expect(accounting.trialBalance("2026-10-27").isBalanced).toBe(true);
     } finally {
       close();
     }
