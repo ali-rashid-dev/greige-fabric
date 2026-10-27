@@ -1,0 +1,84 @@
+{
+  "name": "greige-fabric-pos",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Greige Fabric point-of-sale desktop application",
+  "homepage": "https://greigefabric.example",
+  "desktopName": "Greige Fabric POS",
+  "main": "dist-electron/main.js",
+  "author": {
+    "name": "Greige Fabric",
+    "email": "maintainer@greigefabric.example"
+  },
+  "scripts": {
+    "dev": "concurrently -k -n WEB,ELECTRON -c cyan,magenta \"npm:dev:web\" \"npm:dev:electron\"",
+    "dev:web": "next dev --hostname 127.0.0.1",
+    "dev:electron": "wait-on http://127.0.0.1:3000 && cross-env DESKTOP_DEV_URL=http://127.0.0.1:3000 electron-vite dev",
+    "build": "next build && electron-vite build",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "test": "vitest run",
+    "dist": "npm run build && electron-builder",
+    "dist:win": "npm run build && electron-builder --win nsis",
+    "dist:mac": "npm run build && electron-builder --mac dmg",
+    "dist:linux": "npm run build && electron-builder --linux AppImage deb"
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "@types/node": "24.10.0",
+    "@types/react": "19.2.2",
+    "@types/react-dom": "19.2.2",
+    "concurrently": "9.2.5",
+    "cross-env": "10.1.0",
+    "electron": "42.11.18",
+    "electron-builder": "26.18.0",
+    "electron-vite": "6.0.0",
+    "eslint": "10.13.0",
+    "globals": "17.13.0",
+    "next": "16.4.2",
+    "react": "19.3.1",
+    "react-dom": "19.3.1",
+    "typescript": "5.9.3",
+    "typescript-eslint": "8.72.0",
+    "vitest": "5.0.5",
+    "wait-on": "8.0.4"
+  },
+  "build": {
+    "appId": "com.greigefabric.pos",
+    "productName": "Greige Fabric POS",
+    "asar": true,
+    "npmRebuild": true,
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist-electron/**/*",
+      "out/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        "nsis"
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    },
+    "mac": {
+      "target": [
+        "dmg"
+      ],
+      "category": "public.app-category.productivity"
+    },
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb"
+      ],
+      "category": "Utility",
+      "maintainer": "Greige Fabric <maintainer@greigefabric.example>",
+      "syncDesktopName": true
+    }
+  }
+}
