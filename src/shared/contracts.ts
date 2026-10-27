@@ -72,7 +72,17 @@ export const createInvoiceSchema = z.object({
     fabricId: z.string().uuid(),
     quantityMeters: z.number().finite().positive().max(1_000_000)
       .refine((value) => hasPrecision(value, 1000), "Use up to 3 decimal places"),
+    unitRate: z.number().finite().positive().max(1_000_000_000)
+      .refine((value) => hasPrecision(value, 100), "Use up to 2 decimal places")
+      .optional(),
   })).min(1).max(100),
+  discount: z.number().finite().nonnegative().max(1_000_000_000)
+    .refine((value) => hasPrecision(value, 100), "Use up to 2 decimal places")
+    .optional(),
+  receivedAmount: z.number().finite().nonnegative().max(1_000_000_000)
+    .refine((value) => hasPrecision(value, 100), "Use up to 2 decimal places")
+    .optional(),
+  paymentAccount: z.enum(["cash", "bank"]).optional(),
 }).superRefine(({ items }, context) => {
   const ids = new Set<string>();
   for (const [index, item] of items.entries()) {

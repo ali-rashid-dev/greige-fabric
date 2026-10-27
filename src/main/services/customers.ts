@@ -37,6 +37,9 @@ interface InvoiceRow {
   id: string;
   invoice_number: string;
   total_minor: number;
+  discount_minor: number;
+  amount_received_minor: number;
+  payment_account_code: string;
   created_at: string;
   customer_id?: string | null;
   customer_code?: string | null;
@@ -82,10 +85,16 @@ function mapCustomer(row: CustomerRow): Customer {
 }
 
 function mapInvoice(row: InvoiceRow, items: InvoiceItemRow[]): Invoice {
+  const subtotalMinor = items.reduce((total, item) => total + item.line_total_minor, 0);
   return {
     id: row.id,
     invoiceNumber: row.invoice_number,
+    subtotalMinor,
+    discountMinor: row.discount_minor,
     totalMinor: row.total_minor,
+    amountReceivedMinor: row.amount_received_minor,
+    dueMinor: row.total_minor - row.amount_received_minor,
+    paymentAccount: row.payment_account_code === "1010" ? "bank" : "cash",
     createdAt: row.created_at,
     customerId: row.customer_id ?? undefined,
     customerCode: row.customer_code ?? undefined,
@@ -182,7 +191,8 @@ export class CustomerService {
   get(id: string): CustomerDetails {
     const customer = this.getCustomer(id);
     const invoices = this.database.prepare(`
-      SELECT i.id, i.invoice_number, i.total_minor, i.created_at,
+      SELECT i.id, i.invoice_number, i.total_minor, i.discount_minor,
+             i.amount_received_minor, i.payment_account_code, i.created_at,
              i.customer_id, c.code AS customer_code, c.name AS customer_name
       FROM invoices i JOIN customers c ON c.id = i.customer_id
       WHERE i.customer_id = ? ORDER BY i.created_at DESC

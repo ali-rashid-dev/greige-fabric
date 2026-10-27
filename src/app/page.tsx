@@ -5,6 +5,7 @@ import type { FormEvent } from "react";
 import { businessConfig } from "@/config/business";
 import { getDesktopApi } from "@/lib/desktop-api";
 import { fabricInputSchema } from "@/shared/contracts";
+import SalesPos from "./sales-pos";
 import type {
   Fabric,
   FabricDetails,
@@ -20,7 +21,7 @@ import type {
   SupplierStatement,
 } from "@/shared/types";
 
-type Section = "fabrics" | "stock" | "suppliers" | "customers" | "invoices";
+type Section = "pos" | "fabrics" | "stock" | "suppliers" | "customers" | "invoices";
 type StatusFilter = "active" | "all" | "inactive" | "low-stock";
 type InventoryView = "overview" | "movements" | "low-stock" | "valuation";
 type CustomerTab = "overview" | "sales" | "payments" | "ledger";
@@ -92,7 +93,7 @@ function toFormValues(fabric: Fabric): FabricFormValues {
 }
 
 export default function Home() {
-  const [section, setSection] = useState<Section>("fabrics");
+  const [section, setSection] = useState<Section>("pos");
   const [fabrics, setFabrics] = useState<Fabric[]>([]);
   const [stock, setStock] = useState<StockSummary | null>(null);
   const [invoices, setInvoices] = useState<Invoice[]>([]);
@@ -290,6 +291,11 @@ export default function Home() {
       ),
     );
   }, [customers, customerSearch]);
+
+  async function handleSalePosted(invoice: Invoice) {
+    setInvoices((current) => [invoice, ...current.filter((item) => item.id !== invoice.id)]);
+    await Promise.all([refreshCatalog(), refreshManagement()]);
+  }
 
   function openCreateForm() {
     setEditing(null);
@@ -795,7 +801,9 @@ export default function Home() {
     }
   }
 
-  const pageTitle = section === "fabrics"
+  const pageTitle = section === "pos"
+    ? "New sale"
+    : section === "fabrics"
     ? "Fabric qualities"
     : section === "stock"
       ? "Inventory"
@@ -816,6 +824,9 @@ export default function Home() {
           </div>
         </div>
         <nav className="main-nav" aria-label="Main navigation">
+          <button className={section === "pos" ? "nav-item active" : "nav-item"} onClick={() => setSection("pos")}>
+            <span className="nav-icon">＋</span> New sale
+          </button>
           <button className={section === "fabrics" ? "nav-item active" : "nav-item"} onClick={() => setSection("fabrics")}>
             <span className="nav-icon">▤</span> Fabric catalog
           </button>
@@ -871,6 +882,9 @@ export default function Home() {
               {!customerDetails && <button className="primary-button" onClick={() => openCustomerForm()}><span>+</span> Add customer</button>}
             </div>
           )}
+          {section === "pos" && (
+            <button className="secondary-button" onClick={() => setSection("invoices")}>Sales history</button>
+          )}
         </header>
 
         <div className="content-scroll">
@@ -883,6 +897,8 @@ export default function Home() {
               <button onClick={() => { setSection("fabrics"); setStatusFilter("low-stock"); }}>Review low stock</button>
             </div>
           )}
+
+          {section === "pos" && <SalesPos customers={customers} onPosted={handleSalePosted} />}
 
           {section === "fabrics" && (
             <>
@@ -1024,10 +1040,10 @@ export default function Home() {
             <>
               <div className="section-heading">
                 <div><h2>Completed invoices</h2><p>Each line keeps the name, SKU and rate from when it was sold.</p></div>
-                <span className="history-count">{invoices.length} invoices</span>
+                <div className="topbar-actions"><span className="history-count">{invoices.length} invoices</span><button className="primary-button" onClick={() => setSection("pos")}>+ New sale</button></div>
               </div>
               {invoices.length === 0 ? (
-                <EmptyState title="No invoices yet" copy="Record a sale from a fabric's details to start building sales history." />
+                <EmptyState title="No invoices yet" copy="Start a new sale to build your sales history." />
               ) : (
                 <div className="invoice-list">
                   {invoices.map((invoice) => <InvoiceCard key={invoice.id} invoice={invoice} />)}
@@ -1595,8 +1611,14 @@ function StatusBadge({ active, low = false }: { active: boolean; low?: boolean }
 function InvoiceCard({ invoice }: { invoice: Invoice }) {
   return (
     <article className="invoice-card">
-      <header><div><strong>{invoice.invoiceNumber}</strong><span>{formatDate(invoice.createdAt)}{invoice.customerName ? ` · ${invoice.customerCode} ${invoice.customerName}` : ""}</span></div><strong className="invoice-total">{formatMoney(invoice.totalMinor)}</strong></header>
+      <header><div><strong>{invoice.invoiceNumber}</strong><span>{formatDate(invoice.createdAt)}{invoice.customerName ? ` · ${invoice.customerCode} ${invoice.customerName}` : " · Walk-in customer"}</span></div><strong className="invoice-total">{formatMoney(invoice.totalMinor)}</strong></header>
       <div className="invoice-lines">{invoice.items.map((item) => <div className="invoice-line" key={item.id}><span><strong>{item.sku}</strong> · {item.name}<small>{formatMeters(item.quantityMm)} × {formatMoney(item.unitPriceMinor)} / m</small></span><strong>{formatMoney(item.lineTotalMinor)}</strong></div>)}</div>
+      <footer className="invoice-summary">
+        <span>Subtotal <strong>{formatMoney(invoice.subtotalMinor)}</strong></span>
+        <span>Discount <strong>{formatMoney(invoice.discountMinor)}</strong></span>
+        <span>Received ({invoice.paymentAccount}) <strong>{formatMoney(invoice.amountReceivedMinor)}</strong></span>
+        <span>Credit balance <strong>{formatMoney(invoice.dueMinor)}</strong></span>
+      </footer>
     </article>
   );
 }

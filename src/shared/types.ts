@@ -55,7 +55,12 @@ export interface InvoiceItem {
 export interface Invoice {
   id: string;
   invoiceNumber: string;
+  subtotalMinor: number;
+  discountMinor: number;
   totalMinor: number;
+  amountReceivedMinor: number;
+  dueMinor: number;
+  paymentAccount: "cash" | "bank";
   createdAt: string;
   customerId?: string;
   customerCode?: string;

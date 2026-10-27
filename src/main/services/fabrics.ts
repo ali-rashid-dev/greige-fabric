@@ -41,6 +41,9 @@ interface InvoiceRow {
   id: string;
   invoice_number: string;
   total_minor: number;
+  discount_minor: number;
+  amount_received_minor: number;
+  payment_account_code: string;
   created_at: string;
   customer_id?: string | null;
   customer_code?: string | null;
@@ -89,10 +92,16 @@ function mapInvoiceItem(row: InvoiceItemRow): InvoiceItem {
 }
 
 function mapInvoice(row: InvoiceRow, items: InvoiceItem[]): Invoice {
+  const subtotalMinor = items.reduce((total, item) => total + item.lineTotalMinor, 0);
   return {
     id: row.id,
     invoiceNumber: row.invoice_number,
+    subtotalMinor,
+    discountMinor: row.discount_minor,
     totalMinor: row.total_minor,
+    amountReceivedMinor: row.amount_received_minor,
+    dueMinor: row.total_minor - row.amount_received_minor,
+    paymentAccount: row.payment_account_code === "1010" ? "bank" : "cash",
     createdAt: row.created_at,
     customerId: row.customer_id ?? undefined,
     customerCode: row.customer_code ?? undefined,
@@ -158,7 +167,8 @@ export class FabricService {
   get(id: string): FabricDetails {
     const fabric = this.getFabric(id);
     const invoices = this.database.prepare(`
-      SELECT DISTINCT i.id, i.invoice_number, i.total_minor, i.created_at,
+      SELECT DISTINCT i.id, i.invoice_number, i.total_minor, i.discount_minor,
+             i.amount_received_minor, i.payment_account_code, i.created_at,
              i.customer_id, c.code AS customer_code, c.name AS customer_name
       FROM invoices i
       JOIN invoice_items item ON item.invoice_id = i.id
@@ -278,31 +288,57 @@ export class FabricService {
         if (fabric.stockMm < quantityMm) {
           throw new FabricServiceError("INSUFFICIENT_STOCK", `Not enough stock for ${fabric.sku}.`);
         }
+        const unitPriceMinor = item.unitRate === undefined
+          ? fabric.sellingRateMinor
+          : Math.round(item.unitRate * 100);
         return {
           fabric,
           quantityMm,
           costMinor: this.inventory.costForRemoval(fabric.id, quantityMm),
-          lineTotalMinor: calculateMinorValue(quantityMm, fabric.sellingRateMinor),
+          unitPriceMinor,
+          lineTotalMinor: calculateMinorValue(quantityMm, unitPriceMinor),
         };
       });
 
-      totalMinor = lines.reduce((total, line) => total + line.lineTotalMinor, 0);
-      if (!Number.isSafeInteger(totalMinor)) {
+      const subtotalMinor = lines.reduce((total, line) => total + line.lineTotalMinor, 0);
+      const discountMinor = Math.round((input.discount ?? 0) * 100);
+      if (!Number.isSafeInteger(subtotalMinor)) {
         throw new FabricServiceError("VALIDATION", "The invoice total exceeds the supported accounting precision.");
+      }
+      if (discountMinor > subtotalMinor) {
+        throw new FabricServiceError("VALIDATION", "The discount cannot exceed the invoice subtotal.");
+      }
+      totalMinor = subtotalMinor - discountMinor;
+      const amountReceivedMinor = input.receivedAmount === undefined
+        ? 0
+        : Math.round(input.receivedAmount * 100);
+      if (!Number.isSafeInteger(totalMinor) || amountReceivedMinor > totalMinor) {
+        throw new FabricServiceError("VALIDATION", "The received amount cannot exceed the invoice total.");
+      }
+      const amountDueMinor = totalMinor - amountReceivedMinor;
+      if (input.receivedAmount !== undefined && amountDueMinor > 0 && !invoiceCustomer) {
+        throw new FabricServiceError("VALIDATION", "Select a customer for a sale with an outstanding balance.");
       }
       if (invoiceCustomer) {
         const outstanding = this.database.prepare(`
           SELECT COALESCE(SUM(debit_minor - credit_minor), 0) AS balance
           FROM ledger_postings WHERE account_code = '1300' AND customer_id = ?
         `).get(invoiceCustomer.id) as { balance: number };
-        if (outstanding.balance + totalMinor > invoiceCustomer.credit_limit_minor) {
+        if (outstanding.balance + amountDueMinor > invoiceCustomer.credit_limit_minor) {
           throw new FabricServiceError("CONFLICT", "This sale would exceed the customer's credit limit.");
         }
       }
       const costOfGoodsSold = lines.reduce((total, line) => total + line.costMinor, 0);
-      this.database.prepare(
-        "INSERT INTO invoices (id, invoice_number, total_minor, created_at, customer_id) VALUES (?, ?, ?, ?, ?)",
-      ).run(id, invoiceNumber, totalMinor, createdAt, invoiceCustomer?.id ?? null);
+      const paymentAccountCode = input.paymentAccount === "bank" ? "1010" : "1000";
+      this.database.prepare(`
+        INSERT INTO invoices (
+          id, invoice_number, total_minor, created_at, customer_id,
+          discount_minor, amount_received_minor, payment_account_code
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        id, invoiceNumber, totalMinor, createdAt, invoiceCustomer?.id ?? null,
+        discountMinor, amountReceivedMinor, paymentAccountCode,
+      );
       for (const line of lines) {
         const itemId = randomUUID();
         this.database.prepare(`
@@ -312,7 +348,7 @@ export class FabricService {
           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         `).run(
           itemId, id, line.fabric.id, line.fabric.sku, line.fabric.name,
-          line.quantityMm, line.fabric.sellingRateMinor, line.lineTotalMinor,
+          line.quantityMm, line.unitPriceMinor, line.lineTotalMinor,
         );
         invoiceItems.push({
           id: itemId,
@@ -320,7 +356,7 @@ export class FabricService {
           sku: line.fabric.sku,
           name: line.fabric.name,
           quantityMm: line.quantityMm,
-          unitPriceMinor: line.fabric.sellingRateMinor,
+          unitPriceMinor: line.unitPriceMinor,
           lineTotalMinor: line.lineTotalMinor,
         });
         this.inventory.postMovement({
@@ -334,7 +370,12 @@ export class FabricService {
         });
       }
       postJournal(this.database, "sale", invoiceNumber, createdAt, [
-        { accountCode: "1300", debitMinor: totalMinor, customerId: invoiceCustomer?.id },
+        ...(amountReceivedMinor > 0
+          ? [{ accountCode: paymentAccountCode, debitMinor: amountReceivedMinor }]
+          : []),
+        ...(amountDueMinor > 0
+          ? [{ accountCode: "1300", debitMinor: amountDueMinor, customerId: invoiceCustomer?.id }]
+          : []),
         { accountCode: "4000", creditMinor: totalMinor },
         { accountCode: "5000", debitMinor: costOfGoodsSold },
         { accountCode: "1200", creditMinor: costOfGoodsSold },
@@ -344,7 +385,12 @@ export class FabricService {
     return {
       id,
       invoiceNumber,
+      subtotalMinor: invoiceItems.reduce((total, item) => total + item.lineTotalMinor, 0),
+      discountMinor: Math.round((input.discount ?? 0) * 100),
       totalMinor,
+      amountReceivedMinor: input.receivedAmount === undefined ? 0 : Math.round(input.receivedAmount * 100),
+      dueMinor: totalMinor - (input.receivedAmount === undefined ? 0 : Math.round(input.receivedAmount * 100)),
+      paymentAccount: input.paymentAccount ?? "cash",
       createdAt,
       ...(invoiceCustomer ? {
         customerId: invoiceCustomer.id,
@@ -357,7 +403,8 @@ export class FabricService {
 
   listInvoices(): Invoice[] {
     const rows = this.database.prepare(`
-      SELECT i.id, i.invoice_number, i.total_minor, i.created_at,
+      SELECT i.id, i.invoice_number, i.total_minor, i.discount_minor,
+             i.amount_received_minor, i.payment_account_code, i.created_at,
              i.customer_id, c.code AS customer_code, c.name AS customer_name
       FROM invoices i LEFT JOIN customers c ON c.id = i.customer_id
       ORDER BY i.created_at DESC

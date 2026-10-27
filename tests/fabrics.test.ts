@@ -487,6 +487,98 @@ describe("fabric quality catalog", () => {
     }
   });
 
+  it("posts a discounted credit sale once across inventory, receivables, revenue and COGS", async () => {
+    const { database, service, inventory, customers, close } = await createService();
+    try {
+      const fabric = service.create(fabricInputSchema.parse(sampleFabric));
+      inventory.openStock({
+        fabricId: fabric.id,
+        quantityMeters: 20,
+        unitCost: 145,
+        reference: "POS-ACCEPTANCE-STOCK",
+        reason: "POS acceptance stock",
+      }, "Owner");
+      const customerInput = customerInputSchema.parse({
+        code: "CUS-POS",
+        name: "POS Wholesale Buyer",
+        openingBalance: 0,
+        creditLimit: 1000,
+        paymentTermsDays: 30,
+      });
+      const customer = customers.create({
+        code: customerInput.code,
+        name: customerInput.name,
+        phone: customerInput.phone,
+        address: customerInput.address,
+        openingBalance: customerInput.openingBalance,
+        creditLimit: customerInput.creditLimit,
+        paymentTermsDays: customerInput.paymentTermsDays,
+      }, "System");
+
+      const invoice = service.createInvoice(createInvoiceSchema.parse({
+        customerId: customer.id,
+        items: [{ fabricId: fabric.id, quantityMeters: 5.5, unitRate: 200 }],
+        discount: 100,
+        receivedAmount: 400,
+        paymentAccount: "cash",
+      }));
+      expect(invoice).toMatchObject({
+        subtotalMinor: 110_000,
+        discountMinor: 10_000,
+        totalMinor: 100_000,
+        amountReceivedMinor: 40_000,
+        dueMinor: 60_000,
+      });
+      expect(invoice.items[0]).toMatchObject({
+        quantityMm: 5_500,
+        unitPriceMinor: 20_000,
+        lineTotalMinor: 110_000,
+      });
+      expect(service.get(fabric.id).fabric.stockMm).toBe(14_500);
+      expect(customers.get(customer.id).customer.outstandingMinor).toBe(60_000);
+      expect(inventory.movements().filter((movement) => movement.movementType === "sale"))
+        .toHaveLength(1);
+
+      const saleTransaction = database.prepare(`
+        SELECT id FROM ledger_transactions WHERE transaction_type = 'sale' AND reference = ?
+      `).get(invoice.invoiceNumber) as { id: string };
+      expect(database.prepare(`
+        SELECT COUNT(*) AS count FROM ledger_transactions
+        WHERE transaction_type = 'sale' AND reference = ?
+      `).get(invoice.invoiceNumber)).toMatchObject({ count: 1 });
+      const postings = database.prepare(`
+        SELECT account_code, SUM(debit_minor) AS debit, SUM(credit_minor) AS credit
+        FROM ledger_postings WHERE transaction_id = ? GROUP BY account_code ORDER BY account_code
+      `).all(saleTransaction.id) as Array<{ account_code: string; debit: number; credit: number }>;
+      expect(postings).toEqual([
+        { account_code: "1000", debit: 40_000, credit: 0 },
+        { account_code: "1200", debit: 0, credit: 79_750 },
+        { account_code: "1300", debit: 60_000, credit: 0 },
+        { account_code: "4000", debit: 0, credit: 100_000 },
+        { account_code: "5000", debit: 79_750, credit: 0 },
+      ]);
+      expect(service.listInvoices()[0]).toMatchObject({
+        id: invoice.id,
+        discountMinor: 10_000,
+        amountReceivedMinor: 40_000,
+        dueMinor: 60_000,
+      });
+
+      const movementCount = inventory.movements().length;
+      const invoiceCount = service.listInvoices().length;
+      expect(() => service.createInvoice(createInvoiceSchema.parse({
+        customerId: customer.id,
+        items: [{ fabricId: fabric.id, quantityMeters: 1 }],
+        receivedAmount: 10_000,
+      }))).toThrowError(new FabricServiceError("VALIDATION", "The received amount cannot exceed the invoice total."));
+      expect(inventory.movements()).toHaveLength(movementCount);
+      expect(service.listInvoices()).toHaveLength(invoiceCount);
+      expect(customers.get(customer.id).customer.outstandingMinor).toBe(60_000);
+    } finally {
+      close();
+    }
+  });
+
   it("backs up an existing POS database before applying a new migration", async () => {
     const directory = await mkdtemp(path.join(os.tmpdir(), "greige-migration-"));
     temporaryDirectories.push(directory);
