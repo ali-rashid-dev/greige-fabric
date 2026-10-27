@@ -26,7 +26,7 @@ Use `Ctrl+C` to stop development processes.
 | --- | --- |
 | `npm run typecheck` | Run TypeScript without emitting build output. |
 | `npm run lint` | Run ESLint across the project. |
-| `npm test` | Run the Vitest project-setup smoke tests. |
+| `npm test` | Rebuild `better-sqlite3` for host Node, run Vitest catalog/database tests, then restore its Electron build. Let it finish so Electron's native module is ready for development. |
 
 ## Build and package
 
@@ -41,6 +41,10 @@ Use `Ctrl+C` to stop development processes.
 Packaged artifacts are written to `release/`. Cross-platform builds may need a
 native runner for the target operating system. macOS signing and notarization
 are not configured by default.
+
+The runtime POS database is created in Electron's per-user application data
+directory. SQL schema migrations live in `database/migrations/` and are bundled
+with packaged apps.
 
 ## Show available scripts
 

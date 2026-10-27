@@ -18,4 +18,16 @@ export default defineConfig({
       },
     },
   },
+  preload: {
+    build: {
+      outDir: "dist-electron",
+      emptyOutDir: false,
+      isolatedEntries: true,
+      externalizeDeps: false,
+      rollupOptions: {
+        input: resolve("src/main/preload.ts"),
+        output: { entryFileNames: "preload.js", format: "cjs" },
+      },
+    },
+  },
 });

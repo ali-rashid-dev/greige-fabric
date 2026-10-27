@@ -1,9 +1,13 @@
 import { app, BrowserWindow, dialog, session } from "electron";
 import { pathToFileURL } from "node:url";
 import path from "node:path";
+import { openDatabase } from "./database";
+import { registerIpcHandlers } from "./ipc/handlers";
+import { FabricService } from "./services/fabrics";
 
 const developmentUrl = process.env.DESKTOP_DEV_URL;
 let mainWindow: BrowserWindow | null = null;
+let database: Awaited<ReturnType<typeof openDatabase>> | null = null;
 
 function getRendererPath(): string {
   return path.join(app.getAppPath(), "out", "index.html");
@@ -57,11 +61,15 @@ async function createMainWindow(): Promise<void> {
     title: "Greige Fabric POS",
     backgroundColor: "#f7f7f5",
     webPreferences: {
+      preload: path.join(__dirname, "preload.js"),
       nodeIntegration: false,
       contextIsolation: true,
       sandbox: true,
       webSecurity: true,
     },
+  });
+  mainWindow.webContents.on("preload-error", (_event, preloadPath, error) => {
+    console.error(`Failed to load Electron preload script at ${preloadPath}.`, error);
   });
 
   mainWindow.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
@@ -102,23 +110,47 @@ app.on("web-contents-created", (_event, contents) => {
 app.whenReady().then(async () => {
   installSecurityPolicy();
   try {
+    const databasePath = path.join(app.getPath("userData"), "greige-fabric-pos.sqlite");
+    const migrationsPath = app.isPackaged
+      ? path.join(process.resourcesPath, "migrations")
+      : path.join(app.getAppPath(), "database", "migrations");
+    database = await openDatabase(databasePath, migrationsPath);
+    registerIpcHandlers(
+      new FabricService(database),
+      developmentUrl,
+      pathToFileURL(getRendererPath()).href,
+    );
     await createMainWindow();
   } catch (error) {
     console.error("Application startup failed.", error);
     await dialog.showMessageBox({
       type: "error",
       title: "Greige Fabric POS could not start",
-      message: "The application could not start.",
+      message: "The application database could not be opened or migrated.",
       detail: app.isPackaged ? undefined : String(error),
     });
     app.quit();
   }
 
   app.on("activate", () => {
-    if (BrowserWindow.getAllWindows().length === 0) {
+    if (BrowserWindow.getAllWindows().length === 0 && database) {
       void createMainWindow();
     }
   });
+});
+
+app.on("before-quit", (event) => {
+  if (!database) return;
+  event.preventDefault();
+  const activeDatabase = database;
+  database = null;
+  try {
+    activeDatabase.close();
+  } catch (error) {
+    console.error("Database shutdown failed.", error);
+  } finally {
+    app.quit();
+  }
 });
 
 app.on("window-all-closed", () => {
