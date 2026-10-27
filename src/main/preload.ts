@@ -14,6 +14,26 @@ const api: DesktopApi = {
     summary: () => ipcRenderer.invoke(channels.stockSummary),
     adjust: (input) => ipcRenderer.invoke(channels.adjustStock, input),
   },
+  inventory: {
+    report: () => ipcRenderer.invoke(channels.inventoryReport),
+    movements: () => ipcRenderer.invoke(channels.inventoryMovements),
+    opening: (input) => ipcRenderer.invoke(channels.inventoryOpening, input),
+  },
+  auth: {
+    pinStatus: () => ipcRenderer.invoke(channels.pinStatus),
+    setPin: (input) => ipcRenderer.invoke(channels.setPin, input),
+  },
+  suppliers: {
+    list: (input) => ipcRenderer.invoke(channels.listSuppliers, input ?? {}),
+    get: (input) => ipcRenderer.invoke(channels.getSupplier, input),
+    create: (input) => ipcRenderer.invoke(channels.createSupplier, input),
+    update: (input) => ipcRenderer.invoke(channels.updateSupplier, input),
+    receive: (input) => ipcRenderer.invoke(channels.receiveSupplierPurchase, input),
+    pay: (input) => ipcRenderer.invoke(channels.paySupplier, input),
+    adjust: (input) => ipcRenderer.invoke(channels.adjustSupplier, input),
+    statement: (input) => ipcRenderer.invoke(channels.supplierStatement, input),
+    reconcile: () => ipcRenderer.invoke(channels.supplierReconcile),
+  },
   invoices: {
     list: () => ipcRenderer.invoke(channels.listInvoices),
     create: (input) => ipcRenderer.invoke(channels.createInvoice, input),

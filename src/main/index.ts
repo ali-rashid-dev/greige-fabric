@@ -4,6 +4,9 @@ import path from "node:path";
 import { openDatabase } from "./database";
 import { registerIpcHandlers } from "./ipc/handlers";
 import { FabricService } from "./services/fabrics";
+import { InventoryService } from "./services/inventory";
+import { SupplierService } from "./services/suppliers";
+import { OwnerAuthService } from "./services/owner-auth";
 
 const developmentUrl = process.env.DESKTOP_DEV_URL;
 let mainWindow: BrowserWindow | null = null;
@@ -117,6 +120,9 @@ app.whenReady().then(async () => {
     database = await openDatabase(databasePath, migrationsPath);
     registerIpcHandlers(
       new FabricService(database),
+      new InventoryService(database),
+      new SupplierService(database),
+      new OwnerAuthService(path.join(app.getPath("userData"), "owner-pin.enc")),
       developmentUrl,
       pathToFileURL(getRendererPath()).href,
     );

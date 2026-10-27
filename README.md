@@ -1,8 +1,9 @@
 # Greige Fabric POS
 
-Greige Fabric POS is an offline-first Electron desktop application for managing
-fabric qualities and stock. It uses Next.js App Router, React, TypeScript,
-SQLite, and a narrow, validated Electron preload bridge.
+Greige Fabric POS is an offline-first Electron desktop application for fabric
+catalog, inventory, supplier purchasing, and Accounts Payable workflows. It uses
+Next.js App Router, React, TypeScript, SQLite, and a narrow, validated Electron
+preload bridge.
 
 ## Fabric catalog
 
@@ -13,14 +14,39 @@ stock quantities are stored to three decimal places in metres.
 
 The catalog supports search by SKU, name, construction, or composition; status
 and low-stock filters; create/edit/details; activation/deactivation; stock
-adjustments; stock summaries; and invoice history. Product records are never
-deleted through the app. Invoices preserve SKU, fabric name, sold quantity, and
-unit selling rate as snapshots, so later product edits do not rewrite past
-sales.
+summaries; and invoice history. Product records are never deleted through the
+app. Invoices preserve SKU, fabric name, sold quantity, and unit selling rate as
+snapshots, so later product edits do not rewrite past sales.
 
-This first workflow records a simple invoice and reduces on-hand stock. It does
-not yet include payment collection, tax rules, receipt printing, customer
-records, purchasing, or reporting.
+## Inventory
+
+Stock is stored as integer millimeters and displayed in meters. Opening stock,
+supplier receipts, sales, and authorized adjustments all use the inventory
+service, which updates the balance and movement history in one SQLite
+transaction. Movements record product, signed quantity, type, reference,
+timestamp, and actor. Inventory valuation uses the persisted stock value and
+weighted-average cost; low-stock and movement reports are available in the
+Inventory screen.
+
+Manual inventory and supplier-balance adjustments, plus nonzero supplier
+opening balances, require an owner PIN. The PIN is encrypted using Electron
+`safeStorage` and the operating system keychain; these operations fail closed
+when secure storage is unavailable or the PIN is not configured. On Linux,
+GNOME Keyring or KDE Wallet must be available.
+
+## Suppliers and Accounts Payable
+
+Supplier records include a unique code, contact details, and an AP-derived
+outstanding balance. Supplier opening balances, purchase bills, payments, and
+authorized adjustments are posted to a double-entry ledger. Receiving a bill
+records the supplier purchase, inventory movement, weighted-average cost, and
+AP posting together. Payments are posted to the selected Cash or Bank account.
+Supplier statements show opening and closing balances for a date range, and the
+supplier subledger can be reconciled to the Accounts Payable control account.
+
+Sales invoices are recorded against Accounts Receivable; sales revenue and cost
+of goods sold are also posted to the ledger. Tax rules, receipt printing,
+customer records, and customer payment collection are not yet included.
 
 ## Prerequisites
 
@@ -67,12 +93,13 @@ operating system. macOS signing and notarization are not configured by default.
 
 ## Project structure
 
-- `src/app/`: catalog, stock, and invoice-history screens.
+- `src/app/`: catalog, inventory, supplier, and invoice-history screens.
 - `src/shared/`: Zod request schemas, IPC channels, and public types.
-- `src/main/`: Electron lifecycle, SQLite setup, fabric service, and validated
-  IPC handlers.
+- `src/main/`: Electron lifecycle, SQLite setup, inventory/fabric/supplier
+  services, local authorization, accounting, and validated IPC handlers.
 - `database/migrations/`: versioned SQL schema.
-- `tests/`: contract, stock, and historical-price snapshot tests.
+- `tests/`: catalog, inventory, accounting, supplier reconciliation, and
+  historical-price snapshot tests.
 
 The renderer has no direct Node.js, filesystem, or SQLite access. It calls a
 small API exposed by the preload script; the main process validates every IPC

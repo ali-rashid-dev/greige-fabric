@@ -14,18 +14,11 @@ import type {
   InvoiceItem,
   StockSummary,
 } from "../../shared/types";
+import { InventoryService } from "./inventory";
+import { calculateMinorValue, postJournal } from "./accounting";
+import { FabricServiceError } from "./errors";
 
-type ErrorCode = "NOT_FOUND" | "CONFLICT" | "INSUFFICIENT_STOCK";
-
-export class FabricServiceError extends Error {
-  constructor(
-    readonly code: ErrorCode,
-    message: string,
-  ) {
-    super(message);
-    this.name = "FabricServiceError";
-  }
-}
+export { FabricServiceError } from "./errors";
 
 interface FabricRow {
   id: string;
@@ -38,7 +31,7 @@ interface FabricRow {
   purchase_cost_minor: number;
   selling_rate_minor: number;
   reorder_threshold_mm: number;
-  stock_mm: number;
+  stock_qty_mm: number;
   active: number;
   created_at: string;
   updated_at: string;
@@ -73,7 +66,7 @@ function mapFabric(row: FabricRow): Fabric {
     purchaseCostMinor: row.purchase_cost_minor,
     sellingRateMinor: row.selling_rate_minor,
     reorderThresholdMm: row.reorder_threshold_mm,
-    stockMm: row.stock_mm,
+    stockMm: row.stock_qty_mm,
     active: row.active === 1,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -117,13 +110,15 @@ function mapInput(input: FabricInput): Omit<Fabric, "id" | "stockMm" | "active" 
 }
 
 export class FabricService {
-  constructor(private readonly database: Database.Database) {}
+  private readonly inventory: InventoryService;
+
+  constructor(private readonly database: Database.Database) {
+    this.inventory = new InventoryService(database);
+  }
 
   private getFabric(id: string): Fabric {
     const row = this.database.prepare(`
-      SELECT f.*,
-        COALESCE((SELECT SUM(s.quantity_mm) FROM stock_movements s WHERE s.fabric_id = f.id), 0) AS stock_mm
-      FROM fabrics f WHERE f.id = ?
+      SELECT * FROM fabrics WHERE id = ?
     `).get(id) as FabricRow | undefined;
     if (!row) throw new FabricServiceError("NOT_FOUND", "Fabric product not found.");
     return mapFabric(row);
@@ -141,18 +136,13 @@ export class FabricService {
     if (filters.status === "active") conditions.push("f.active = 1");
     if (filters.status === "inactive") conditions.push("f.active = 0");
     if (filters.status === "low-stock") {
-      conditions.push(`f.active = 1 AND COALESCE(stock.stock_mm, 0) <= f.reorder_threshold_mm`);
+      conditions.push("f.active = 1 AND f.stock_qty_mm <= f.reorder_threshold_mm");
     }
 
     const where = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
     const rows = this.database.prepare(`
-      SELECT f.*,
-        COALESCE(stock.stock_mm, 0) AS stock_mm
+      SELECT f.*
       FROM fabrics f
-      LEFT JOIN (
-        SELECT fabric_id, SUM(quantity_mm) AS stock_mm
-        FROM stock_movements GROUP BY fabric_id
-      ) stock ON stock.fabric_id = f.id
       ${where}
       ORDER BY f.sku COLLATE NOCASE
     `).all(...values) as FabricRow[];
@@ -238,22 +228,8 @@ export class FabricService {
     return this.getFabric(id);
   }
 
-  adjustStock(input: StockAdjustmentInput): Fabric {
-    const delta = Math.round(input.quantityMeters * 1000) * (input.direction === "add" ? 1 : -1);
-    const transaction = this.database.transaction(() => {
-      this.getFabric(input.fabricId);
-      const stock = this.database.prepare(
-        "SELECT COALESCE(SUM(quantity_mm), 0) AS quantity FROM stock_movements WHERE fabric_id = ?",
-      ).get(input.fabricId) as { quantity: number };
-      if (stock.quantity + delta < 0) {
-        throw new FabricServiceError("INSUFFICIENT_STOCK", "Stock cannot be adjusted below zero.");
-      }
-      this.database.prepare(`
-        INSERT INTO stock_movements (id, fabric_id, quantity_mm, reason, created_at)
-        VALUES (?, ?, ?, ?, ?)
-      `).run(randomUUID(), input.fabricId, delta, input.reason, new Date().toISOString());
-    });
-    transaction.immediate();
+  adjustStock(input: Omit<StockAdjustmentInput, "ownerPin">, authorizedUser: string): Fabric {
+    this.inventory.adjustStock(input, authorizedUser);
     return this.getFabric(input.fabricId);
   }
 
@@ -290,11 +266,16 @@ export class FabricService {
         return {
           fabric,
           quantityMm,
-          lineTotalMinor: Math.round(fabric.sellingRateMinor * quantityMm / 1000),
+          costMinor: this.inventory.costForRemoval(fabric.id, quantityMm),
+          lineTotalMinor: calculateMinorValue(quantityMm, fabric.sellingRateMinor),
         };
       });
 
       totalMinor = lines.reduce((total, line) => total + line.lineTotalMinor, 0);
+      if (!Number.isSafeInteger(totalMinor)) {
+        throw new FabricServiceError("VALIDATION", "The invoice total exceeds the supported accounting precision.");
+      }
+      const costOfGoodsSold = lines.reduce((total, line) => total + line.costMinor, 0);
       this.database.prepare(
         "INSERT INTO invoices (id, invoice_number, total_minor, created_at) VALUES (?, ?, ?, ?)",
       ).run(id, invoiceNumber, totalMinor, createdAt);
@@ -318,11 +299,22 @@ export class FabricService {
           unitPriceMinor: line.fabric.sellingRateMinor,
           lineTotalMinor: line.lineTotalMinor,
         });
-        this.database.prepare(`
-          INSERT INTO stock_movements (id, fabric_id, quantity_mm, reason, created_at)
-          VALUES (?, ?, ?, ?, ?)
-        `).run(randomUUID(), line.fabric.id, -line.quantityMm, `Invoice ${invoiceNumber}`, createdAt);
+        this.inventory.postMovement({
+          fabricId: line.fabric.id,
+          quantityMm: -line.quantityMm,
+          type: "sale",
+          reference: invoiceNumber,
+          reason: `Invoice ${invoiceNumber}`,
+          authorizedUser: "POS",
+          createdAt,
+        });
       }
+      postJournal(this.database, "sale", invoiceNumber, createdAt, [
+        { accountCode: "1300", debitMinor: totalMinor },
+        { accountCode: "4000", creditMinor: totalMinor },
+        { accountCode: "5000", debitMinor: costOfGoodsSold },
+        { accountCode: "1200", creditMinor: costOfGoodsSold },
+      ]);
     });
     create.immediate();
     return {

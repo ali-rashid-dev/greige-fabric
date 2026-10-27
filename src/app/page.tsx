@@ -5,10 +5,21 @@ import type { FormEvent } from "react";
 import { businessConfig } from "@/config/business";
 import { getDesktopApi } from "@/lib/desktop-api";
 import { fabricInputSchema } from "@/shared/contracts";
-import type { Fabric, FabricDetails, Invoice, StockSummary } from "@/shared/types";
+import type {
+  Fabric,
+  FabricDetails,
+  InventoryMovement,
+  InventoryReport,
+  Invoice,
+  StockSummary,
+  Supplier,
+  SupplierDetails,
+  SupplierStatement,
+} from "@/shared/types";
 
-type Section = "fabrics" | "stock" | "invoices";
+type Section = "fabrics" | "stock" | "suppliers" | "invoices";
 type StatusFilter = "active" | "all" | "inactive" | "low-stock";
+type InventoryView = "overview" | "movements" | "low-stock" | "valuation";
 
 interface FabricFormValues {
   sku: string;
@@ -88,6 +99,65 @@ export default function Home() {
   const [adjustmentDirection, setAdjustmentDirection] = useState<"add" | "remove">("add");
   const [adjustmentQuantity, setAdjustmentQuantity] = useState("");
   const [adjustmentReason, setAdjustmentReason] = useState("");
+  const [adjustmentPin, setAdjustmentPin] = useState("");
+  const [inventoryReport, setInventoryReport] = useState<InventoryReport | null>(null);
+  const [movements, setMovements] = useState<InventoryMovement[]>([]);
+  const [inventoryView, setInventoryView] = useState<InventoryView>("overview");
+  const [openingStockOpen, setOpeningStockOpen] = useState(false);
+  const [openingValues, setOpeningValues] = useState({
+    fabricId: "",
+    quantityMeters: "",
+    unitCost: "",
+    reference: "",
+    reason: "",
+    ownerPin: "",
+  });
+  const [suppliers, setSuppliers] = useState<Supplier[]>([]);
+  const [supplierDetails, setSupplierDetails] = useState<SupplierDetails | null>(null);
+  const [supplierSearch, setSupplierSearch] = useState("");
+  const [supplierFormOpen, setSupplierFormOpen] = useState(false);
+  const [supplierEditing, setSupplierEditing] = useState<Supplier | null>(null);
+  const [supplierValues, setSupplierValues] = useState({
+    code: "",
+    name: "",
+    phone: "",
+    address: "",
+    contactName: "",
+    email: "",
+    openingBalance: "",
+    ownerPin: "",
+  });
+  const [purchaseOpen, setPurchaseOpen] = useState(false);
+  const [purchaseValues, setPurchaseValues] = useState({
+    billNumber: "",
+    reference: "",
+    fabricId: "",
+    quantityMeters: "",
+    unitCost: "",
+  });
+  const [paymentOpen, setPaymentOpen] = useState(false);
+  const [paymentValues, setPaymentValues] = useState({
+    amount: "",
+    account: "cash" as "cash" | "bank",
+    reference: "",
+    note: "",
+  });
+  const [supplierAdjustmentOpen, setSupplierAdjustmentOpen] = useState(false);
+  const [supplierAdjustmentValues, setSupplierAdjustmentValues] = useState({
+    direction: "increase" as "increase" | "decrease",
+    amount: "",
+    reason: "",
+    ownerPin: "",
+  });
+  const [statement, setStatement] = useState<SupplierStatement | null>(null);
+  const [statementDates, setStatementDates] = useState({
+    from: new Date().toISOString().slice(0, 10),
+    to: new Date().toISOString().slice(0, 10),
+  });
+  const [pinConfigured, setPinConfigured] = useState(false);
+  const [pinSetupOpen, setPinSetupOpen] = useState(false);
+  const [pinSetupValues, setPinSetupValues] = useState({ pin: "", confirmation: "" });
+  const [apReconciliation, setApReconciliation] = useState<{ controlMinor: number; subledgerMinor: number; differenceMinor: number } | null>(null);
 
   const loadCatalog = useCallback(async () => {
     const [fabricResult, stockResult, invoiceResult] = await Promise.all([
@@ -132,6 +202,36 @@ export default function Home() {
     await loadCatalog();
   }
 
+  async function refreshManagement() {
+    const [reportResult, movementResult, supplierResult, reconciliationResult] = await Promise.all([
+      getDesktopApi().inventory.report(),
+      getDesktopApi().inventory.movements(),
+      getDesktopApi().suppliers.list({ query: supplierSearch, includeInactive: true }),
+      getDesktopApi().suppliers.reconcile(),
+    ]);
+    if (!reportResult.ok) throw new Error(reportResult.error.message);
+    if (!movementResult.ok) throw new Error(movementResult.error.message);
+    if (!supplierResult.ok) throw new Error(supplierResult.error.message);
+    if (!reconciliationResult.ok) throw new Error(reconciliationResult.error.message);
+    setInventoryReport(reportResult.data);
+    setMovements(movementResult.data);
+    setSuppliers(supplierResult.data);
+    setApReconciliation(reconciliationResult.data);
+
+    const pinResult = await getDesktopApi().auth.pinStatus();
+    if (pinResult.ok) setPinConfigured(pinResult.data.configured);
+    else {
+      setPinConfigured(false);
+      setError(pinResult.error.message);
+    }
+  }
+
+  useEffect(() => {
+    void refreshManagement().catch((loadError: unknown) => {
+      setError(loadError instanceof Error ? loadError.message : "Unable to load inventory and supplier information.");
+    });
+  }, [supplierSearch]);
+
   function openCreateForm() {
     setEditing(null);
     setFormOpen(true);
@@ -158,6 +258,7 @@ export default function Home() {
     setAdjustmentDirection("add");
     setAdjustmentQuantity("");
     setAdjustmentReason("");
+    setAdjustmentPin("");
     setError("");
   }
 
@@ -258,10 +359,12 @@ export default function Home() {
         direction: adjustmentDirection,
         quantityMeters: Number(adjustmentQuantity),
         reason: adjustmentReason,
+        ownerPin: adjustmentPin,
       });
       if (!result.ok) throw new Error(result.error.message);
-      await refreshCatalog();
+      await Promise.all([refreshCatalog(), refreshManagement()]);
       setAdjustment(null);
+      setAdjustmentPin("");
       setNotice("Stock movement recorded.");
       setTimeout(() => setNotice(""), 3000);
     } catch (adjustError) {
@@ -271,11 +374,226 @@ export default function Home() {
     }
   }
 
+  async function saveOpeningStock(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setSaving(true);
+    setError("");
+    try {
+      const result = await getDesktopApi().inventory.opening({
+        fabricId: openingValues.fabricId,
+        quantityMeters: Number(openingValues.quantityMeters),
+        unitCost: Number(openingValues.unitCost),
+        reference: openingValues.reference,
+        reason: openingValues.reason,
+        ownerPin: openingValues.ownerPin,
+      });
+      if (!result.ok) throw new Error(result.error.message);
+      await Promise.all([refreshCatalog(), refreshManagement()]);
+      setOpeningStockOpen(false);
+      setOpeningValues({ fabricId: "", quantityMeters: "", unitCost: "", reference: "", reason: "", ownerPin: "" });
+      setNotice("Opening stock and inventory value recorded.");
+    } catch (openingError) {
+      setError(openingError instanceof Error ? openingError.message : "Unable to record opening stock.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function openSupplier(supplier: Supplier) {
+    setError("");
+    try {
+      const result = await getDesktopApi().suppliers.get({ id: supplier.id });
+      if (!result.ok) throw new Error(result.error.message);
+      setSupplierDetails(result.data);
+      setStatement(null);
+    } catch (loadError) {
+      setError(loadError instanceof Error ? loadError.message : "Unable to load supplier details.");
+    }
+  }
+
+  function openSupplierForm(supplier?: Supplier) {
+    setSupplierEditing(supplier ?? null);
+    setSupplierValues(supplier ? {
+      code: supplier.code,
+      name: supplier.name,
+      phone: supplier.phone,
+      address: supplier.address,
+      contactName: supplier.contactName,
+      email: supplier.email,
+      openingBalance: "",
+      ownerPin: "",
+    } : {
+      code: "",
+      name: "",
+      phone: "",
+      address: "",
+      contactName: "",
+      email: "",
+      openingBalance: "",
+      ownerPin: "",
+    });
+    setSupplierFormOpen(true);
+    setError("");
+  }
+
+  async function saveSupplier(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setSaving(true);
+    setError("");
+    try {
+      const result = supplierEditing
+        ? await getDesktopApi().suppliers.update({
+          id: supplierEditing.id,
+          code: supplierValues.code,
+          name: supplierValues.name,
+          phone: supplierValues.phone,
+          address: supplierValues.address,
+          contactName: supplierValues.contactName,
+          email: supplierValues.email,
+        })
+        : await getDesktopApi().suppliers.create({
+          code: supplierValues.code,
+          name: supplierValues.name,
+          phone: supplierValues.phone,
+          address: supplierValues.address,
+          contactName: supplierValues.contactName,
+          email: supplierValues.email,
+          openingBalance: Number(supplierValues.openingBalance || 0),
+          ownerPin: supplierValues.ownerPin,
+        });
+      if (!result.ok) throw new Error(result.error.message);
+      await refreshManagement();
+      setSupplierFormOpen(false);
+      setNotice(supplierEditing ? "Supplier details updated." : "Supplier added.");
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : "Unable to save supplier.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function savePurchase(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!supplierDetails) return;
+    setSaving(true);
+    setError("");
+    try {
+      const result = await getDesktopApi().suppliers.receive({
+        supplierId: supplierDetails.supplier.id,
+        billNumber: purchaseValues.billNumber,
+        reference: purchaseValues.reference,
+        items: [{
+          fabricId: purchaseValues.fabricId,
+          quantityMeters: Number(purchaseValues.quantityMeters),
+          unitCost: Number(purchaseValues.unitCost),
+        }],
+      });
+      if (!result.ok) throw new Error(result.error.message);
+      setSupplierDetails(result.data);
+      await Promise.all([refreshCatalog(), refreshManagement()]);
+      setPurchaseOpen(false);
+      setPurchaseValues({ billNumber: "", reference: "", fabricId: "", quantityMeters: "", unitCost: "" });
+      setNotice("Supplier bill and stock receipt posted together.");
+    } catch (purchaseError) {
+      setError(purchaseError instanceof Error ? purchaseError.message : "Unable to receive supplier purchase.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function savePayment(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!supplierDetails) return;
+    setSaving(true);
+    setError("");
+    try {
+      const result = await getDesktopApi().suppliers.pay({
+        supplierId: supplierDetails.supplier.id,
+        amount: Number(paymentValues.amount),
+        account: paymentValues.account,
+        reference: paymentValues.reference,
+        note: paymentValues.note,
+      });
+      if (!result.ok) throw new Error(result.error.message);
+      setSupplierDetails(result.data);
+      await refreshManagement();
+      setPaymentOpen(false);
+      setPaymentValues({ amount: "", account: "cash", reference: "", note: "" });
+      setNotice("Supplier payment and Accounts Payable posting recorded.");
+    } catch (paymentError) {
+      setError(paymentError instanceof Error ? paymentError.message : "Unable to record supplier payment.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function saveSupplierAdjustment(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!supplierDetails) return;
+    setSaving(true);
+    setError("");
+    try {
+      const result = await getDesktopApi().suppliers.adjust({
+        supplierId: supplierDetails.supplier.id,
+        direction: supplierAdjustmentValues.direction,
+        amount: Number(supplierAdjustmentValues.amount),
+        reason: supplierAdjustmentValues.reason,
+        ownerPin: supplierAdjustmentValues.ownerPin,
+      });
+      if (!result.ok) throw new Error(result.error.message);
+      setSupplierDetails(result.data);
+      await refreshManagement();
+      setSupplierAdjustmentOpen(false);
+      setSupplierAdjustmentValues({ direction: "increase", amount: "", reason: "", ownerPin: "" });
+    } catch (adjustError) {
+      setError(adjustError instanceof Error ? adjustError.message : "Unable to adjust supplier balance.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function loadSupplierStatement(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!supplierDetails) return;
+    setError("");
+    try {
+      const result = await getDesktopApi().suppliers.statement({
+        supplierId: supplierDetails.supplier.id,
+        from: statementDates.from,
+        to: statementDates.to,
+      });
+      if (!result.ok) setError(result.error.message);
+      else setStatement(result.data);
+    } catch (statementError) {
+      setError(statementError instanceof Error ? statementError.message : "Unable to generate supplier statement.");
+    }
+  }
+
+  async function saveOwnerPin(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setSaving(true);
+    setError("");
+    try {
+      const result = await getDesktopApi().auth.setPin(pinSetupValues);
+      if (!result.ok) throw new Error(result.error.message);
+      setPinConfigured(result.data.configured);
+      setPinSetupOpen(false);
+      setPinSetupValues({ pin: "", confirmation: "" });
+      setNotice("Owner PIN set up using secure device storage.");
+    } catch (pinError) {
+      setError(pinError instanceof Error ? pinError.message : "Unable to set up owner PIN.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
   const pageTitle = section === "fabrics"
     ? "Fabric qualities"
     : section === "stock"
-      ? "Stock summary"
-      : "Sales history";
+      ? "Inventory"
+      : section === "suppliers"
+        ? "Suppliers"
+        : "Sales history";
 
   return (
     <main className="app-shell">
@@ -292,8 +610,11 @@ export default function Home() {
             <span className="nav-icon">▤</span> Fabric catalog
           </button>
           <button className={section === "stock" ? "nav-item active" : "nav-item"} onClick={() => setSection("stock")}>
-            <span className="nav-icon">▥</span> Stock summary
+            <span className="nav-icon">▥</span> Inventory
             {lowStockFabrics.length > 0 && <span className="nav-count">{lowStockFabrics.length}</span>}
+          </button>
+          <button className={section === "suppliers" ? "nav-item active" : "nav-item"} onClick={() => setSection("suppliers")}>
+            <span className="nav-icon">♧</span> Suppliers
           </button>
           <button className={section === "invoices" ? "nav-item active" : "nav-item"} onClick={() => setSection("invoices")}>
             <span className="nav-icon">▧</span> Sales history
@@ -314,6 +635,21 @@ export default function Home() {
           </div>
           {section === "fabrics" && (
             <button className="primary-button" onClick={openCreateForm}><span>+</span> Add fabric</button>
+          )}
+          {section === "stock" && (
+            <div className="topbar-actions">
+              {!pinConfigured && <button className="secondary-button" onClick={() => setPinSetupOpen(true)}>Set up owner PIN</button>}
+              <button className="primary-button" onClick={() => {
+                setOpeningValues({ fabricId: "", quantityMeters: "", unitCost: "", reference: "", reason: "", ownerPin: "" });
+                setOpeningStockOpen(true);
+              }}><span>+</span> Opening stock</button>
+            </div>
+          )}
+          {section === "suppliers" && (
+            <div className="topbar-actions">
+              {!pinConfigured && <button className="secondary-button" onClick={() => setPinSetupOpen(true)}>Set up owner PIN</button>}
+              <button className="primary-button" onClick={() => openSupplierForm()}><span>+</span> Add supplier</button>
+            </div>
           )}
         </header>
 
@@ -358,14 +694,62 @@ export default function Home() {
             <>
               <div className="summary-grid stock-summary-grid">
                 <SummaryCard label="Active qualities" value={stock?.activeProducts ?? "—"} icon="✓" />
-                <SummaryCard label="Low stock" value={stock?.lowStockCount ?? "—"} icon="!" warning={Boolean(stock?.lowStockCount)} />
-                <SummaryCard label="Total stock" value={formatMeters(stock?.totalStockMm ?? 0)} icon="▥" />
+                <SummaryCard label="Low stock" value={inventoryReport?.lowStockCount ?? stock?.lowStockCount ?? "—"} icon="!" warning={Boolean(inventoryReport?.lowStockCount)} />
+                <SummaryCard label="Total stock" value={formatMeters(inventoryReport?.totalStockMm ?? stock?.totalStockMm ?? 0)} icon="▥" />
+                <SummaryCard label="Inventory valuation" value={formatMoney(inventoryReport?.totalValuationMinor ?? 0)} icon="₨" />
               </div>
-              <div className="section-heading">
-                <div><h2>Stock by fabric</h2><p>Quantities are tracked in metres.</p></div>
+              <div className="inventory-tabs" role="tablist" aria-label="Inventory reports">
+                {([
+                  ["overview", "Overview"],
+                  ["movements", "Movement history"],
+                  ["low-stock", "Low stock"],
+                  ["valuation", "Valuation"],
+                ] as Array<[InventoryView, string]>).map(([view, label]) => (
+                  <button key={view} className={inventoryView === view ? "active" : ""} onClick={() => setInventoryView(view)}>{label}</button>
+                ))}
               </div>
+              {inventoryView === "overview" && (
+                <>
+                  {!pinConfigured && <div className="error-banner" role="status">Manual stock changes require an owner PIN stored in the operating system keychain.</div>}
+                  <div className="section-heading"><div><h2>Stock by fabric</h2><p>All quantities are stored in millimeters and displayed in meters.</p></div></div>
+                  <div className="panel"><FabricTable fabrics={stock?.fabrics ?? []} loading={loading} stockView onDetails={openDetails} onEdit={openEditForm} onAdjust={openAdjustment} /></div>
+                </>
+              )}
+              {inventoryView === "movements" && (
+                <div className="panel">
+                  <div className="section-heading panel-section-heading"><div><h2>Stock movement history</h2><p>Each entry records its reference, actor and timestamp.</p></div></div>
+                  <MovementTable movements={movements} />
+                </div>
+              )}
+              {inventoryView === "low-stock" && (
+                <div className="panel">
+                  <div className="section-heading panel-section-heading"><div><h2>Low-stock report</h2><p>Active fabrics at or below their reorder threshold.</p></div></div>
+                  <FabricTable fabrics={stock?.fabrics.filter((fabric) => fabric.active && fabric.stockMm <= fabric.reorderThresholdMm) ?? []} loading={loading} stockView onDetails={openDetails} onEdit={openEditForm} onAdjust={openAdjustment} />
+                </div>
+              )}
+              {inventoryView === "valuation" && (
+                <div className="panel">
+                  <div className="section-heading panel-section-heading"><div><h2>Inventory valuation</h2><p>Based on recorded stock value using weighted-average purchase cost.</p></div></div>
+                  <ValuationTable report={inventoryReport} />
+                </div>
+              )}
+            </>
+          )}
+
+          {section === "suppliers" && (
+            <>
+              <div className="summary-grid stock-summary-grid">
+                <SummaryCard label="Suppliers" value={suppliers.length} icon="♧" />
+                <SummaryCard label="Accounts Payable" value={formatMoney(suppliers.reduce((sum, supplier) => sum + supplier.outstandingMinor, 0))} icon="₨" />
+                <SummaryCard label="AP reconciliation" value={apReconciliation?.differenceMinor === 0 ? "Balanced" : formatMoney(apReconciliation?.differenceMinor ?? 0)} icon={apReconciliation?.differenceMinor === 0 ? "✓" : "!"} warning={Boolean(apReconciliation?.differenceMinor)} />
+              </div>
+              {apReconciliation && apReconciliation.differenceMinor !== 0 && <div className="error-banner" role="alert">Supplier subledger differs from the Accounts Payable control account by {formatMoney(apReconciliation.differenceMinor)}.</div>}
               <div className="panel">
-                <FabricTable fabrics={stock?.fabrics ?? []} loading={loading} stockView onDetails={openDetails} onEdit={openEditForm} onAdjust={openAdjustment} />
+                <div className="panel-toolbar">
+                  <label className="search-field"><span aria-hidden="true">⌕</span><input value={supplierSearch} onChange={(event) => setSupplierSearch(event.target.value)} placeholder="Search supplier code, name, phone…" aria-label="Search suppliers" /></label>
+                  <span className="history-count">{suppliers.length} suppliers</span>
+                </div>
+                <SupplierTable suppliers={suppliers} onOpen={(supplier) => void openSupplier(supplier)} />
               </div>
             </>
           )}
@@ -480,7 +864,129 @@ export default function Home() {
             <FormField label="Reason" required>
               <input required value={adjustmentReason} onChange={(event) => setAdjustmentReason(event.target.value)} maxLength={160} placeholder="Opening stock, correction…" />
             </FormField>
+            <FormField label="Owner PIN" required hint="Required for all manual inventory adjustments.">
+              <input required type="password" inputMode="numeric" autoComplete="current-password" value={adjustmentPin} onChange={(event) => setAdjustmentPin(event.target.value)} />
+            </FormField>
             <div className="modal-actions"><button className="secondary-button" type="button" onClick={() => setAdjustment(null)}>Cancel</button><button className="primary-button" type="submit" disabled={saving}>{saving ? "Saving…" : "Save movement"}</button></div>
+          </form>
+        </Modal>
+      )}
+
+      {openingStockOpen && (
+        <Modal title="Record opening stock" onClose={() => setOpeningStockOpen(false)}>
+          {error && <div className="error-banner modal-error" role="alert">{error}</div>}
+          <form className="adjustment-form" onSubmit={(event) => void saveOpeningStock(event)}>
+            <FormField label="Fabric" required>
+              <select required value={openingValues.fabricId} onChange={(event) => setOpeningValues({ ...openingValues, fabricId: event.target.value })}>
+                <option value="">Select fabric</option>
+                {(stock?.fabrics ?? []).filter((fabric) => fabric.active).map((fabric) => <option key={fabric.id} value={fabric.id}>{fabric.sku} · {fabric.name}</option>)}
+              </select>
+            </FormField>
+            <FormField label="Quantity" required><div className="input-suffix"><input required type="number" min="0.001" step="0.001" value={openingValues.quantityMeters} onChange={(event) => setOpeningValues({ ...openingValues, quantityMeters: event.target.value })} /><span>m</span></div></FormField>
+            <FormField label="Purchase cost" required><div className="input-prefix"><span>PKR</span><input required type="number" min="0" step="0.01" value={openingValues.unitCost} onChange={(event) => setOpeningValues({ ...openingValues, unitCost: event.target.value })} /></div></FormField>
+            <FormField label="Reference" required><input required maxLength={100} value={openingValues.reference} onChange={(event) => setOpeningValues({ ...openingValues, reference: event.target.value })} placeholder="Opening stock entry" /></FormField>
+            <FormField label="Reason" required><input required maxLength={160} value={openingValues.reason} onChange={(event) => setOpeningValues({ ...openingValues, reason: event.target.value })} /></FormField>
+            <FormField label="Owner PIN" required><input required type="password" inputMode="numeric" value={openingValues.ownerPin} onChange={(event) => setOpeningValues({ ...openingValues, ownerPin: event.target.value })} /></FormField>
+            <div className="modal-actions"><button className="secondary-button" type="button" onClick={() => setOpeningStockOpen(false)}>Cancel</button><button className="primary-button" disabled={saving}>{saving ? "Saving…" : "Record stock"}</button></div>
+          </form>
+        </Modal>
+      )}
+
+      {pinSetupOpen && (
+        <Modal title="Set up owner PIN" onClose={() => setPinSetupOpen(false)}>
+          <p className="muted-message">Choose a numeric PIN of at least 6 digits. It is encrypted with the operating system keychain and is never stored in the renderer or database.</p>
+          {error && <div className="error-banner modal-error" role="alert">{error}</div>}
+          <form className="adjustment-form" onSubmit={(event) => void saveOwnerPin(event)}>
+            <FormField label="Owner PIN" required><input required type="password" inputMode="numeric" autoComplete="new-password" minLength={6} value={pinSetupValues.pin} onChange={(event) => setPinSetupValues({ ...pinSetupValues, pin: event.target.value })} /></FormField>
+            <FormField label="Confirm PIN" required><input required type="password" inputMode="numeric" autoComplete="new-password" minLength={6} value={pinSetupValues.confirmation} onChange={(event) => setPinSetupValues({ ...pinSetupValues, confirmation: event.target.value })} /></FormField>
+            <div className="modal-actions"><button className="secondary-button" type="button" onClick={() => setPinSetupOpen(false)}>Cancel</button><button className="primary-button" disabled={saving}>{saving ? "Saving…" : "Set owner PIN"}</button></div>
+          </form>
+        </Modal>
+      )}
+
+      {supplierFormOpen && (
+        <Modal title={supplierEditing ? "Edit supplier" : "Add supplier"} onClose={() => setSupplierFormOpen(false)} wide>
+          {error && <div className="error-banner modal-error" role="alert">{error}</div>}
+          <form className="fabric-form" onSubmit={(event) => void saveSupplier(event)}>
+            <div className="form-grid">
+              <FormField label="Supplier code" required><input required maxLength={40} value={supplierValues.code} onChange={(event) => setSupplierValues({ ...supplierValues, code: event.target.value })} /></FormField>
+              <FormField label="Supplier name" required><input required maxLength={120} value={supplierValues.name} onChange={(event) => setSupplierValues({ ...supplierValues, name: event.target.value })} /></FormField>
+              <FormField label="Phone" required><input required maxLength={40} value={supplierValues.phone} onChange={(event) => setSupplierValues({ ...supplierValues, phone: event.target.value })} /></FormField>
+              <FormField label="Contact person"><input maxLength={120} value={supplierValues.contactName} onChange={(event) => setSupplierValues({ ...supplierValues, contactName: event.target.value })} /></FormField>
+              <FormField label="Email"><input type="email" maxLength={160} value={supplierValues.email} onChange={(event) => setSupplierValues({ ...supplierValues, email: event.target.value })} /></FormField>
+              <FormField label="Address"><input maxLength={240} value={supplierValues.address} onChange={(event) => setSupplierValues({ ...supplierValues, address: event.target.value })} /></FormField>
+              {!supplierEditing && <FormField label="Opening balance" hint="Credit payable, posted to the AP control account."><div className="input-prefix"><span>PKR</span><input type="number" min="0" step="0.01" value={supplierValues.openingBalance} onChange={(event) => setSupplierValues({ ...supplierValues, openingBalance: event.target.value })} /></div></FormField>}
+              {!supplierEditing && Number(supplierValues.openingBalance) > 0 && <FormField label="Owner PIN" required hint="Required to authorize an opening payable balance."><input required type="password" inputMode="numeric" minLength={6} value={supplierValues.ownerPin} onChange={(event) => setSupplierValues({ ...supplierValues, ownerPin: event.target.value })} /></FormField>}
+            </div>
+            <div className="modal-actions"><button className="secondary-button" type="button" onClick={() => setSupplierFormOpen(false)}>Cancel</button><button className="primary-button" disabled={saving}>{saving ? "Saving…" : supplierEditing ? "Save changes" : "Add supplier"}</button></div>
+          </form>
+        </Modal>
+      )}
+
+      {supplierDetails && (
+        <Modal title="Supplier account" onClose={() => setSupplierDetails(null)} wide>
+          {error && <div className="error-banner modal-error" role="alert">{error}</div>}
+          <div className="detail-head">
+            <div><span className="sku-label">{supplierDetails.supplier.code}</span><h2>{supplierDetails.supplier.name}</h2><p>{supplierDetails.supplier.phone}{supplierDetails.supplier.contactName ? ` · ${supplierDetails.supplier.contactName}` : ""}{supplierDetails.supplier.address ? ` · ${supplierDetails.supplier.address}` : ""}</p></div>
+            <strong className="supplier-balance">{formatMoney(supplierDetails.supplier.outstandingMinor)} due</strong>
+          </div>
+          <div className="detail-actions supplier-actions">
+            <button className="secondary-button" onClick={() => openSupplierForm(supplierDetails.supplier)}>Edit supplier</button>
+            <button className="secondary-button" onClick={() => { setPurchaseValues({ billNumber: "", reference: "", fabricId: "", quantityMeters: "", unitCost: "" }); setPurchaseOpen(true); }}>Receive purchase</button>
+            <button className="secondary-button" onClick={() => setPaymentOpen(true)}>Record payment</button>
+            <button className="secondary-button" onClick={() => setSupplierAdjustmentOpen(true)}>Adjust balance</button>
+          </div>
+          <form className="statement-filter" onSubmit={(event) => void loadSupplierStatement(event)}>
+            <FormField label="From"><input type="date" required value={statementDates.from} onChange={(event) => setStatementDates({ ...statementDates, from: event.target.value })} /></FormField>
+            <FormField label="To"><input type="date" required value={statementDates.to} onChange={(event) => setStatementDates({ ...statementDates, to: event.target.value })} /></FormField>
+            <button className="primary-button">Generate statement</button>
+          </form>
+          {statement && <StatementTable statement={statement} />}
+          <div className="history-block">
+            <div className="section-heading compact"><div><h3>Purchase history</h3><p>Supplier receipts update inventory and AP in the same transaction.</p></div></div>
+            {supplierDetails.purchases.length === 0 ? <p className="muted-message">No purchases recorded.</p> : supplierDetails.purchases.map((purchase) => <div className="history-row" key={purchase.id}><div><strong>{purchase.billNumber}</strong><span>{formatDate(purchase.createdAt)} · {purchase.items.map((item) => `${item.sku} ${formatMeters(item.quantityMm)}`).join(", ")}</span></div><div className="history-price"><strong>{formatMoney(purchase.totalMinor)}</strong></div></div>)}
+            <div className="section-heading compact"><div><h3>Payments</h3><p>Payments are posted against Cash or Bank.</p></div></div>
+            {supplierDetails.payments.length === 0 ? <p className="muted-message">No payments recorded.</p> : supplierDetails.payments.map((payment) => <div className="history-row" key={payment.id}><div><strong>{payment.paymentNumber}</strong><span>{formatDate(payment.createdAt)} · {payment.account.toUpperCase()}{payment.reference ? ` · ${payment.reference}` : ""}</span></div><div className="history-price"><strong>{formatMoney(payment.amountMinor)}</strong></div></div>)}
+          </div>
+        </Modal>
+      )}
+
+      {purchaseOpen && supplierDetails && (
+        <Modal title="Receive supplier purchase" onClose={() => setPurchaseOpen(false)}>
+          {error && <div className="error-banner modal-error" role="alert">{error}</div>}
+          <form className="adjustment-form" onSubmit={(event) => void savePurchase(event)}>
+            <FormField label="Bill number" required><input required maxLength={80} value={purchaseValues.billNumber} onChange={(event) => setPurchaseValues({ ...purchaseValues, billNumber: event.target.value })} /></FormField>
+            <FormField label="Reference"><input maxLength={100} value={purchaseValues.reference} onChange={(event) => setPurchaseValues({ ...purchaseValues, reference: event.target.value })} /></FormField>
+            <FormField label="Fabric" required><select required value={purchaseValues.fabricId} onChange={(event) => setPurchaseValues({ ...purchaseValues, fabricId: event.target.value })}><option value="">Select fabric</option>{(stock?.fabrics ?? []).filter((fabric) => fabric.active).map((fabric) => <option key={fabric.id} value={fabric.id}>{fabric.sku} · {fabric.name}</option>)}</select></FormField>
+            <FormField label="Quantity" required><div className="input-suffix"><input required type="number" min="0.001" step="0.001" value={purchaseValues.quantityMeters} onChange={(event) => setPurchaseValues({ ...purchaseValues, quantityMeters: event.target.value })} /><span>m</span></div></FormField>
+            <FormField label="Unit cost" required><div className="input-prefix"><span>PKR / m</span><input required type="number" min="0" step="0.01" value={purchaseValues.unitCost} onChange={(event) => setPurchaseValues({ ...purchaseValues, unitCost: event.target.value })} /></div></FormField>
+            <div className="modal-actions"><button className="secondary-button" type="button" onClick={() => setPurchaseOpen(false)}>Cancel</button><button className="primary-button" disabled={saving}>{saving ? "Posting…" : "Post purchase"}</button></div>
+          </form>
+        </Modal>
+      )}
+
+      {paymentOpen && supplierDetails && (
+        <Modal title="Record supplier payment" onClose={() => setPaymentOpen(false)}>
+          {error && <div className="error-banner modal-error" role="alert">{error}</div>}
+          <form className="adjustment-form" onSubmit={(event) => void savePayment(event)}>
+            <FormField label="Amount" required><div className="input-prefix"><span>PKR</span><input required type="number" min="0.01" step="0.01" value={paymentValues.amount} onChange={(event) => setPaymentValues({ ...paymentValues, amount: event.target.value })} /></div></FormField>
+            <FormField label="Paid from" required><select value={paymentValues.account} onChange={(event) => setPaymentValues({ ...paymentValues, account: event.target.value as "cash" | "bank" })}><option value="cash">Cash</option><option value="bank">Bank</option></select></FormField>
+            <FormField label="Reference"><input maxLength={100} value={paymentValues.reference} onChange={(event) => setPaymentValues({ ...paymentValues, reference: event.target.value })} /></FormField>
+            <FormField label="Note"><input maxLength={160} value={paymentValues.note} onChange={(event) => setPaymentValues({ ...paymentValues, note: event.target.value })} /></FormField>
+            <div className="modal-actions"><button className="secondary-button" type="button" onClick={() => setPaymentOpen(false)}>Cancel</button><button className="primary-button" disabled={saving}>{saving ? "Posting…" : "Record payment"}</button></div>
+          </form>
+        </Modal>
+      )}
+
+      {supplierAdjustmentOpen && supplierDetails && (
+        <Modal title="Adjust supplier balance" onClose={() => setSupplierAdjustmentOpen(false)}>
+          {error && <div className="error-banner modal-error" role="alert">{error}</div>}
+          <form className="adjustment-form" onSubmit={(event) => void saveSupplierAdjustment(event)}>
+            <FormField label="Adjustment" required><select value={supplierAdjustmentValues.direction} onChange={(event) => setSupplierAdjustmentValues({ ...supplierAdjustmentValues, direction: event.target.value as "increase" | "decrease" })}><option value="increase">Increase payable</option><option value="decrease">Decrease payable</option></select></FormField>
+            <FormField label="Amount" required><div className="input-prefix"><span>PKR</span><input required type="number" min="0.01" step="0.01" value={supplierAdjustmentValues.amount} onChange={(event) => setSupplierAdjustmentValues({ ...supplierAdjustmentValues, amount: event.target.value })} /></div></FormField>
+            <FormField label="Reason" required><input required maxLength={160} value={supplierAdjustmentValues.reason} onChange={(event) => setSupplierAdjustmentValues({ ...supplierAdjustmentValues, reason: event.target.value })} /></FormField>
+            <FormField label="Owner PIN" required><input required type="password" inputMode="numeric" value={supplierAdjustmentValues.ownerPin} onChange={(event) => setSupplierAdjustmentValues({ ...supplierAdjustmentValues, ownerPin: event.target.value })} /></FormField>
+            <div className="modal-actions"><button className="secondary-button" type="button" onClick={() => setSupplierAdjustmentOpen(false)}>Cancel</button><button className="primary-button" disabled={saving}>{saving ? "Posting…" : "Post adjustment"}</button></div>
           </form>
         </Modal>
       )}
@@ -523,6 +1029,89 @@ function FabricTable({ fabrics, loading, stockView = false, onDetails, onEdit, o
           })}
         </tbody>
       </table>
+    </div>
+  );
+}
+
+function MovementTable({ movements }: { movements: InventoryMovement[] }) {
+  if (movements.length === 0) return <EmptyState title="No stock movements" copy="Opening stock, supplier receipts, sales and authorized adjustments will appear here." />;
+  return (
+    <div className="table-wrap">
+      <table>
+        <thead><tr><th>Date</th><th>Fabric</th><th>Type</th><th>Quantity</th><th>Reference / reason</th><th>Authorized user</th></tr></thead>
+        <tbody>{movements.map((movement) => <tr key={movement.id}>
+          <td>{formatDate(movement.createdAt)}</td>
+          <td><strong>{movement.sku}</strong><br /><span className="cell-muted">{movement.fabricName}</span></td>
+          <td className="capitalize">{movement.movementType}</td>
+          <td className={movement.quantityMm < 0 ? "movement-negative" : "movement-positive"}>{movement.quantityMm > 0 ? "+" : ""}{formatMeters(movement.quantityMm)}</td>
+          <td><strong>{movement.reference}</strong><br /><span className="cell-muted">{movement.reason}</span></td>
+          <td>{movement.authorizedUser}</td>
+        </tr>)}</tbody>
+      </table>
+    </div>
+  );
+}
+
+function ValuationTable({ report }: { report: InventoryReport | null }) {
+  if (!report || report.valuation.length === 0) return <EmptyState title="No inventory to value" copy="Record opening stock or a supplier purchase to begin inventory valuation." />;
+  return (
+    <div className="table-wrap">
+      <table>
+        <thead><tr><th>Fabric</th><th>On hand</th><th>Average cost / m</th><th>Inventory value</th><th>Reorder point</th></tr></thead>
+        <tbody>{report.valuation.map((item) => <tr key={item.fabricId}>
+          <td><strong>{item.sku}</strong><br /><span className="cell-muted">{item.name}</span></td>
+          <td>{formatMeters(item.stockQtyMm)}</td>
+          <td>{formatMoney(item.unitCostMinor)}</td>
+          <td><strong>{formatMoney(item.valueMinor)}</strong></td>
+          <td>{formatMeters(item.reorderThresholdMm)}{item.lowStock && <span className="status-badge low valuation-low">Low</span>}</td>
+        </tr>)}</tbody>
+      </table>
+      <div className="report-total"><span>Active stock valuation</span><strong>{formatMoney(report.totalValuationMinor)}</strong></div>
+    </div>
+  );
+}
+
+function SupplierTable({ suppliers, onOpen }: { suppliers: Supplier[]; onOpen: (supplier: Supplier) => void }) {
+  if (suppliers.length === 0) return <EmptyState title="No suppliers found" copy="Add a fabric supplier to track purchases and outstanding balances." />;
+  return (
+    <div className="table-wrap">
+      <table>
+        <thead><tr><th>Supplier</th><th>Phone / contact</th><th>Purchases</th><th>Payments</th><th>Outstanding balance</th><th /></tr></thead>
+        <tbody>{suppliers.map((supplier) => <tr key={supplier.id}>
+          <td><button className="fabric-link" onClick={() => onOpen(supplier)}><strong>{supplier.name}</strong><span>{supplier.code}</span></button></td>
+          <td>{supplier.phone}{supplier.contactName ? <><br /><span className="cell-muted">{supplier.contactName}</span></> : null}</td>
+          <td>{supplier.purchaseCount}</td>
+          <td>{supplier.paymentCount}</td>
+          <td><strong>{formatMoney(supplier.outstandingMinor)}</strong></td>
+          <td><button className="secondary-button table-button" onClick={() => onOpen(supplier)}>View account</button></td>
+        </tr>)}</tbody>
+      </table>
+    </div>
+  );
+}
+
+function StatementTable({ statement }: { statement: SupplierStatement }) {
+  return (
+    <div className="statement-panel">
+      <div className="statement-balances">
+        <Metric label="Opening balance" value={formatMoney(statement.openingBalanceMinor)} />
+        <Metric label="Closing balance" value={formatMoney(statement.closingBalanceMinor)} />
+      </div>
+      {statement.lines.length === 0 ? <p className="muted-message">No postings in this date range.</p> : (
+        <div className="table-wrap">
+          <table>
+            <thead><tr><th>Date</th><th>Posting</th><th>Reference</th><th>Debit</th><th>Credit</th><th>Balance</th></tr></thead>
+            <tbody>{statement.lines.map((line, index) => <tr key={`${line.createdAt}-${index}`}>
+              <td>{formatDate(line.createdAt)}</td>
+              <td className="capitalize">{line.transactionType.replaceAll("_", " ")}</td>
+              <td>{line.reference}</td>
+              <td>{line.debitMinor ? formatMoney(line.debitMinor) : "—"}</td>
+              <td>{line.creditMinor ? formatMoney(line.creditMinor) : "—"}</td>
+              <td><strong>{formatMoney(line.balanceMinor)}</strong></td>
+            </tr>)}</tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 }

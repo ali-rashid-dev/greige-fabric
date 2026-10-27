@@ -642,7 +642,116 @@ td {
 }
 
 .stock-summary-grid {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.inventory-tabs {
+  display: flex;
+  gap: 5px;
+  margin: 20px 0 14px;
+  border-bottom: 1px solid var(--line);
+}
+
+.inventory-tabs button {
+  padding: 9px 12px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: #818d83;
+  font-size: 9px;
+}
+
+.inventory-tabs button.active {
+  border-bottom-color: var(--green);
+  color: var(--green);
+  font-weight: 650;
+}
+
+.panel-section-heading {
+  padding: 14px 15px 0;
+}
+
+.supplier-balance {
+  color: #46564a;
+  font-size: 14px;
+  white-space: nowrap;
+}
+
+.supplier-actions {
+  flex-wrap: wrap;
+}
+
+.statement-filter {
+  display: grid;
+  grid-template-columns: 1fr 1fr auto;
+  align-items: end;
+  gap: 10px;
+  padding: 13px;
+  border: 1px solid #e8ede8;
+  border-radius: 6px;
+  background: #fbfcfa;
+}
+
+.statement-filter .primary-button {
+  min-height: 35px;
+}
+
+.statement-panel {
+  margin-top: 12px;
+  border: 1px solid #edf0ed;
+  border-radius: 6px;
+}
+
+.statement-balances {
+  display: flex;
+  gap: 35px;
+  padding: 12px;
+}
+
+.report-total {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 20px;
+  padding: 12px 14px;
+  border-top: 1px solid #edf0ed;
+  color: #738076;
+  font-size: 9px;
+}
+
+.report-total strong {
+  color: #46564a;
+  font-size: 11px;
+}
+
+.valuation-low {
+  margin-left: 8px;
+}
+
+.movement-positive {
+  color: #426c4d;
+  font-weight: 650;
+}
+
+.movement-negative {
+  color: #a45d52;
+  font-weight: 650;
+}
+
+.capitalize {
+  text-transform: capitalize;
+}
+
+.table-button {
+  min-height: 29px;
+  padding: 0 9px;
+  font-size: 8px;
 }
 
 .section-heading {
@@ -1164,6 +1273,16 @@ td {
     font-size: 17px;
   }
 
+  .topbar-actions {
+    gap: 5px;
+  }
+
+  .topbar-actions .secondary-button,
+  .topbar-actions .primary-button {
+    padding: 0 8px;
+    font-size: 8px;
+  }
+
   .summary-card {
     min-height: 68px;
     padding: 9px;
@@ -1202,5 +1321,17 @@ td {
   .modal-backdrop {
     align-items: flex-start;
     padding: 12px;
+  }
+
+  .statement-filter {
+    grid-template-columns: 1fr;
+  }
+
+  .inventory-tabs {
+    overflow-x: auto;
+  }
+
+  .inventory-tabs button {
+    white-space: nowrap;
   }
 }

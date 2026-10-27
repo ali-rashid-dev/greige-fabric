@@ -4,7 +4,14 @@ import type {
   FabricFiltersInput,
   FabricIdInput,
   FabricInput,
+  OpeningStockInput,
   StockAdjustmentInput,
+  SupplierAdjustmentInput,
+  SupplierListInput,
+  SupplierPaymentInput,
+  SupplierPurchaseInput,
+  SupplierStatementInput,
+  SupplierInput,
   UpdateFabricInput,
 } from "./contracts";
 
@@ -61,6 +68,104 @@ export interface StockSummary {
   fabrics: Fabric[];
 }
 
+export interface InventoryMovement {
+  id: string;
+  fabricId: string;
+  sku: string;
+  fabricName: string;
+  quantityMm: number;
+  movementType: "opening" | "adjustment" | "purchase" | "sale";
+  reference: string;
+  reason: string;
+  authorizedUser: string;
+  createdAt: string;
+}
+
+export interface InventoryValuation {
+  fabricId: string;
+  sku: string;
+  name: string;
+  stockQtyMm: number;
+  unitCostMinor: number;
+  valueMinor: number;
+  reorderThresholdMm: number;
+  lowStock: boolean;
+}
+
+export interface InventoryReport {
+  totalStockMm: number;
+  totalValuationMinor: number;
+  lowStockCount: number;
+  valuation: InventoryValuation[];
+}
+
+export interface Supplier {
+  id: string;
+  code: string;
+  name: string;
+  phone: string;
+  address: string;
+  contactName: string;
+  email: string;
+  active: boolean;
+  outstandingMinor: number;
+  purchaseCount: number;
+  paymentCount: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface SupplierPurchase {
+  id: string;
+  billNumber: string;
+  reference: string;
+  totalMinor: number;
+  createdAt: string;
+  items: Array<{
+    id: string;
+    fabricId: string;
+    sku: string;
+    fabricName: string;
+    quantityMm: number;
+    unitCostMinor: number;
+    lineTotalMinor: number;
+  }>;
+}
+
+export interface SupplierPayment {
+  id: string;
+  paymentNumber: string;
+  account: "cash" | "bank";
+  amountMinor: number;
+  reference: string;
+  note: string;
+  createdAt: string;
+}
+
+export interface SupplierStatementLine {
+  transactionType: string;
+  reference: string;
+  createdAt: string;
+  debitMinor: number;
+  creditMinor: number;
+  balanceMinor: number;
+}
+
+export interface SupplierStatement {
+  supplierId: string;
+  from: string;
+  to: string;
+  openingBalanceMinor: number;
+  closingBalanceMinor: number;
+  lines: SupplierStatementLine[];
+}
+
+export interface SupplierDetails {
+  supplier: Supplier;
+  purchases: SupplierPurchase[];
+  payments: SupplierPayment[];
+}
+
 export interface DesktopApi {
   fabrics: {
     list(filters?: FabricFiltersInput): Promise<IpcResult<Fabric[]>>;
@@ -72,6 +177,26 @@ export interface DesktopApi {
   stock: {
     summary(): Promise<IpcResult<StockSummary>>;
     adjust(input: StockAdjustmentInput): Promise<IpcResult<Fabric>>;
+  };
+  inventory: {
+    report(): Promise<IpcResult<InventoryReport>>;
+    movements(): Promise<IpcResult<InventoryMovement[]>>;
+    opening(input: OpeningStockInput): Promise<IpcResult<Fabric>>;
+  };
+  auth: {
+    pinStatus(): Promise<IpcResult<{ configured: boolean }>>;
+    setPin(input: { pin: string; confirmation: string }): Promise<IpcResult<{ configured: boolean }>>;
+  };
+  suppliers: {
+    list(input?: SupplierListInput): Promise<IpcResult<Supplier[]>>;
+    get(input: { id: string }): Promise<IpcResult<SupplierDetails>>;
+    create(input: SupplierInput): Promise<IpcResult<Supplier>>;
+    update(input: import("./contracts").UpdateSupplierInput): Promise<IpcResult<Supplier>>;
+    receive(input: SupplierPurchaseInput): Promise<IpcResult<SupplierDetails>>;
+    pay(input: SupplierPaymentInput): Promise<IpcResult<SupplierDetails>>;
+    adjust(input: SupplierAdjustmentInput): Promise<IpcResult<SupplierDetails>>;
+    statement(input: SupplierStatementInput): Promise<IpcResult<SupplierStatement>>;
+    reconcile(): Promise<IpcResult<{ controlMinor: number; subledgerMinor: number; differenceMinor: number }>>;
   };
   invoices: {
     list(): Promise<IpcResult<Invoice[]>>;
