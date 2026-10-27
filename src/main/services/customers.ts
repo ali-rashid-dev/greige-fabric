@@ -4,6 +4,7 @@ import type {
   CustomerInput,
   CustomerListInput,
   CustomerReceiptInput,
+  CustomerReceiptReversalInput,
   CustomerStatementInput,
   UpdateCustomerInput,
 } from "../../shared/contracts";
@@ -13,6 +14,7 @@ import type {
   CustomerReceipt,
   CustomerStatement,
   Invoice,
+  PaymentAccount,
 } from "../../shared/types";
 import { FabricServiceError } from "./errors";
 import { postJournal } from "./accounting";
@@ -27,6 +29,7 @@ interface CustomerRow {
   payment_terms_days: number;
   active: number;
   outstanding_minor: number;
+  advance_minor: number;
   sales_count: number;
   receipt_count: number;
   created_at: string;
@@ -58,12 +61,17 @@ interface InvoiceItemRow {
 
 interface ReceiptRow {
   id: string;
+  invoice_id: string | null;
+  invoice_number: string | null;
   receipt_number: string;
   account_code: string;
+  account_name: string;
   amount_minor: number;
   reference: string;
   note: string;
   created_at: string;
+  reversed_at: string | null;
+  reversal_reason: string;
 }
 
 function mapCustomer(row: CustomerRow): Customer {
@@ -77,6 +85,7 @@ function mapCustomer(row: CustomerRow): Customer {
     paymentTermsDays: row.payment_terms_days,
     active: row.active === 1,
     outstandingMinor: row.outstanding_minor,
+    advanceMinor: row.advance_minor,
     salesCount: row.sales_count,
     receiptCount: row.receipt_count,
     createdAt: row.created_at,
@@ -122,6 +131,10 @@ export class CustomerService {
           SELECT SUM(p.debit_minor - p.credit_minor)
           FROM ledger_postings p WHERE p.account_code = '1300' AND p.customer_id = c.id
         ), 0) AS outstanding_minor,
+        COALESCE((
+          SELECT SUM(p.credit_minor - p.debit_minor)
+          FROM ledger_postings p WHERE p.account_code = '2200' AND p.customer_id = c.id
+        ), 0) AS advance_minor,
         (SELECT COUNT(*) FROM invoices i WHERE i.customer_id = c.id) AS sales_count,
         (SELECT COUNT(*) FROM customer_receipts r WHERE r.customer_id = c.id) AS receipt_count
       FROM customers c
@@ -205,19 +218,37 @@ export class CustomerService {
       return mapInvoice(invoice, items);
     });
     const receiptRows = this.database.prepare(`
-      SELECT id, receipt_number, account_code, amount_minor, reference, note, created_at
-      FROM customer_receipts WHERE customer_id = ? ORDER BY created_at DESC
+      SELECT r.id, r.invoice_id, i.invoice_number, r.receipt_number, r.account_code,
+             a.name AS account_name, r.amount_minor, r.reference, r.note, r.created_at,
+             r.reversed_at, r.reversal_reason
+      FROM customer_receipts r
+      JOIN ledger_accounts a ON a.code = r.account_code
+      LEFT JOIN invoices i ON i.id = r.invoice_id
+      WHERE r.customer_id = ? ORDER BY r.created_at DESC, r.rowid DESC
     `).all(id) as ReceiptRow[];
     const receipts: CustomerReceipt[] = receiptRows.map((row) => ({
       id: row.id,
       receiptNumber: row.receipt_number,
       account: row.account_code === "1010" ? "bank" : "cash",
+      paymentMethod: row.account_name,
+      invoiceId: row.invoice_id ?? undefined,
+      invoiceNumber: row.invoice_number ?? undefined,
       amountMinor: row.amount_minor,
       reference: row.reference,
       note: row.note,
       createdAt: row.created_at,
+      reversedAt: row.reversed_at ?? undefined,
+      reversalReason: row.reversal_reason || undefined,
     }));
     return { customer, sales, receipts, statement: null };
+  }
+
+  paymentAccounts(): PaymentAccount[] {
+    return this.database.prepare(`
+      SELECT code, name FROM ledger_accounts
+      WHERE account_type = 'asset' AND code NOT IN ('1200', '1300')
+      ORDER BY code
+    `).all() as PaymentAccount[];
   }
 
   receive(input: CustomerReceiptInput): CustomerDetails {
@@ -225,31 +256,87 @@ export class CustomerService {
     const receiptNumber = `CR-${new Date().toISOString().slice(0, 10).replaceAll("-", "")}-${id.slice(0, 6).toUpperCase()}`;
     const amount = Math.round(input.amount * 100);
     const now = new Date().toISOString();
-    const accountCode = input.account === "bank" ? "1010" : "1000";
+    const accountCode = input.accountCode ?? (input.account === "bank" ? "1010" : "1000");
     const transaction = this.database.transaction(() => {
       this.requireCustomer(input.customerId);
-      const outstanding = this.database.prepare(`
-        SELECT COALESCE(SUM(debit_minor - credit_minor), 0) AS balance
-        FROM ledger_postings WHERE account_code = '1300' AND customer_id = ?
-      `).get(input.customerId) as { balance: number };
-      if (amount > outstanding.balance) {
-        throw new FabricServiceError("VALIDATION", "Receipt cannot exceed the customer's outstanding receivable.");
+      this.requirePaymentAccount(accountCode);
+      if (input.invoiceId) {
+        const invoice = this.database.prepare(`
+          SELECT total_minor, amount_received_minor FROM invoices
+          WHERE id = ? AND customer_id = ?
+        `).get(input.invoiceId, input.customerId) as { total_minor: number; amount_received_minor: number } | undefined;
+        if (!invoice) throw new FabricServiceError("NOT_FOUND", "Customer invoice not found.");
+        if (amount > invoice.total_minor - invoice.amount_received_minor) {
+          throw new FabricServiceError("VALIDATION", "Receipt exceeds the remaining amount due on this invoice.");
+        }
+        this.database.prepare("UPDATE invoices SET amount_received_minor = amount_received_minor + ? WHERE id = ?")
+          .run(amount, input.invoiceId);
       }
       this.database.prepare(`
         INSERT INTO customer_receipts (
-          id, customer_id, receipt_number, account_code, amount_minor, reference, note, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+          id, customer_id, invoice_id, receipt_number, account_code, amount_minor, reference, note, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
-        id, input.customerId, receiptNumber, accountCode, amount,
+        id, input.customerId, input.invoiceId ?? null, receiptNumber, accountCode, amount,
         input.reference, input.note, now,
       );
-      postJournal(this.database, "customer_receipt", receiptNumber, now, [
-        { accountCode, debitMinor: amount },
-        { accountCode: "1300", customerId: input.customerId, creditMinor: amount },
-      ]);
+      if (input.invoiceId) {
+        postJournal(this.database, "customer_receipt", receiptNumber, now, [
+          { accountCode, debitMinor: amount },
+          { accountCode: "1300", customerId: input.customerId, creditMinor: amount },
+        ]);
+      } else {
+        postJournal(this.database, "customer_advance", receiptNumber, now, [
+          { accountCode, debitMinor: amount },
+          { accountCode: "2200", creditMinor: amount, customerId: input.customerId },
+        ]);
+      }
     });
     transaction.immediate();
     return this.get(input.customerId);
+  }
+
+  reverseReceipt(input: CustomerReceiptReversalInput): CustomerDetails {
+    const now = new Date().toISOString();
+    const transaction = this.database.transaction(() => {
+      const receipt = this.database.prepare(`
+        SELECT id, customer_id, invoice_id, receipt_number, account_code, amount_minor, reversed_at
+        FROM customer_receipts WHERE id = ?
+      `).get(input.receiptId) as {
+        id: string;
+        customer_id: string;
+        invoice_id: string | null;
+        receipt_number: string;
+        account_code: string;
+        amount_minor: number;
+        reversed_at: string | null;
+      } | undefined;
+      if (!receipt) throw new FabricServiceError("NOT_FOUND", "Customer receipt not found.");
+      if (receipt.reversed_at) throw new FabricServiceError("CONFLICT", "This customer receipt has already been reversed.");
+      if (receipt.invoice_id) {
+        const result = this.database.prepare(`
+          UPDATE invoices SET amount_received_minor = amount_received_minor - ?
+          WHERE id = ? AND amount_received_minor >= ?
+        `).run(receipt.amount_minor, receipt.invoice_id, receipt.amount_minor);
+        if (result.changes === 0) throw new FabricServiceError("CONFLICT", "The receipt can no longer be reversed against this invoice.");
+      }
+      this.database.prepare(`
+        UPDATE customer_receipts SET reversed_at = ?, reversal_reason = ? WHERE id = ?
+      `).run(now, input.reason, receipt.id);
+      postJournal(this.database, "customer_receipt_reversal", receipt.receipt_number, now, receipt.invoice_id
+        ? [
+          { accountCode: "1300", customerId: receipt.customer_id, debitMinor: receipt.amount_minor },
+          { accountCode: receipt.account_code, creditMinor: receipt.amount_minor },
+        ]
+        : [
+          { accountCode: "2200", debitMinor: receipt.amount_minor, customerId: receipt.customer_id },
+          { accountCode: receipt.account_code, creditMinor: receipt.amount_minor },
+        ]);
+    });
+    transaction.immediate();
+    const receiptCustomer = this.database.prepare("SELECT customer_id FROM customer_receipts WHERE id = ?")
+      .get(input.receiptId) as { customer_id: string };
+    return this.get(receiptCustomer.customer_id);
   }
 
   statement(input: CustomerStatementInput): CustomerStatement {
@@ -303,6 +390,10 @@ export class CustomerService {
           SELECT SUM(p.debit_minor - p.credit_minor)
           FROM ledger_postings p WHERE p.account_code = '1300' AND p.customer_id = c.id
         ), 0) AS outstanding_minor,
+        COALESCE((
+          SELECT SUM(p.credit_minor - p.debit_minor)
+          FROM ledger_postings p WHERE p.account_code = '2200' AND p.customer_id = c.id
+        ), 0) AS advance_minor,
         (SELECT COUNT(*) FROM invoices i WHERE i.customer_id = c.id) AS sales_count,
         (SELECT COUNT(*) FROM customer_receipts r WHERE r.customer_id = c.id) AS receipt_count
       FROM customers c WHERE c.id = ?
@@ -315,6 +406,14 @@ export class CustomerService {
     if (!this.database.prepare("SELECT id FROM customers WHERE id = ?").get(id)) {
       throw new FabricServiceError("NOT_FOUND", "Customer not found.");
     }
+  }
+
+  private requirePaymentAccount(code: string): void {
+    const row = this.database.prepare(`
+      SELECT code FROM ledger_accounts
+      WHERE code = ? AND account_type = 'asset' AND code NOT IN ('1200', '1300')
+    `).get(code);
+    if (!row) throw new FabricServiceError("VALIDATION", "Choose a configured cash or payment account.");
   }
 
   private isUniqueViolation(error: unknown): boolean {

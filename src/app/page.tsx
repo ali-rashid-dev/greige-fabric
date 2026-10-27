@@ -14,10 +14,13 @@ import type {
   Invoice,
   Customer,
   CustomerDetails,
+  CustomerReceipt,
   CustomerStatement,
+  PaymentAccount,
   StockSummary,
   Supplier,
   SupplierDetails,
+  SupplierPayment,
   SupplierStatement,
 } from "@/shared/types";
 
@@ -155,11 +158,12 @@ export default function Home() {
   const [paymentOpen, setPaymentOpen] = useState(false);
   const [paymentValues, setPaymentValues] = useState({
     amount: "",
-    account: "cash" as "cash" | "bank",
+    accountCode: "1000",
     reference: "",
     note: "",
     purchaseId: "",
   });
+  const [paymentPreview, setPaymentPreview] = useState<SupplierPayment | null>(null);
   const [supplierAdjustmentOpen, setSupplierAdjustmentOpen] = useState(false);
   const [supplierAdjustmentValues, setSupplierAdjustmentValues] = useState({
     direction: "increase" as "increase" | "decrease",
@@ -195,10 +199,13 @@ export default function Home() {
   const [receiptOpen, setReceiptOpen] = useState(false);
   const [receiptValues, setReceiptValues] = useState({
     amount: "",
-    account: "cash" as "cash" | "bank",
+    accountCode: "1000",
+    invoiceId: "",
     reference: "",
     note: "",
   });
+  const [receiptPreview, setReceiptPreview] = useState<CustomerReceipt | null>(null);
+  const [paymentAccounts, setPaymentAccounts] = useState<PaymentAccount[]>([]);
   const [customerStatement, setCustomerStatement] = useState<CustomerStatement | null>(null);
   const [customerStatementDates, setCustomerStatementDates] = useState({
     from: new Date().toISOString().slice(0, 10),
@@ -250,23 +257,26 @@ export default function Home() {
   }
 
   async function refreshManagement() {
-    const [reportResult, movementResult, supplierResult, reconciliationResult, customerResult] = await Promise.all([
+    const [reportResult, movementResult, supplierResult, reconciliationResult, customerResult, accountResult] = await Promise.all([
       getDesktopApi().inventory.report(),
       getDesktopApi().inventory.movements(),
       getDesktopApi().suppliers.list({ query: supplierSearch, includeInactive: true }),
       getDesktopApi().suppliers.reconcile(),
       getDesktopApi().customers.list({ query: "", includeInactive: true }),
+      getDesktopApi().customers.paymentAccounts(),
     ]);
     if (!reportResult.ok) throw new Error(reportResult.error.message);
     if (!movementResult.ok) throw new Error(movementResult.error.message);
     if (!supplierResult.ok) throw new Error(supplierResult.error.message);
     if (!reconciliationResult.ok) throw new Error(reconciliationResult.error.message);
     if (!customerResult.ok) throw new Error(customerResult.error.message);
+    if (!accountResult.ok) throw new Error(accountResult.error.message);
     setInventoryReport(reportResult.data);
     setMovements(movementResult.data);
     setSuppliers(supplierResult.data);
     setApReconciliation(reconciliationResult.data);
     setCustomers(customerResult.data);
+    setPaymentAccounts(accountResult.data);
 
     const pinResult = await getDesktopApi().auth.pinStatus();
     if (pinResult.ok) setPinConfigured(pinResult.data.configured);
@@ -625,20 +635,57 @@ export default function Home() {
     try {
       const result = await getDesktopApi().customers.receive({
         customerId: customerDetails.customer.id,
+        ...(receiptValues.invoiceId ? { invoiceId: receiptValues.invoiceId } : {}),
         amount: Number(receiptValues.amount),
-        account: receiptValues.account,
+        accountCode: receiptValues.accountCode,
         reference: receiptValues.reference,
         note: receiptValues.note,
       });
       if (!result.ok) throw new Error(result.error.message);
       setCustomerDetails(result.data);
+      setReceiptPreview(result.data.receipts[0] ?? null);
       setCustomerStatement(null);
-      await refreshManagement();
       setReceiptOpen(false);
-      setReceiptValues({ amount: "", account: "cash", reference: "", note: "" });
-      setNotice("Customer receipt posted to Cash/Bank and Accounts Receivable.");
+      setReceiptValues({ amount: "", accountCode: "1000", invoiceId: "", reference: "", note: "" });
+      setNotice("Customer receipt posted and saved.");
+      try {
+        await Promise.all([refreshCatalog(), refreshManagement()]);
+      } catch (refreshError) {
+        setError(`Receipt ${result.data.receipts[0]?.receiptNumber ?? ""} was saved, but balances could not be refreshed: ${refreshError instanceof Error ? refreshError.message : "refresh failed"}`);
+      }
     } catch (receiptError) {
       setError(receiptError instanceof Error ? receiptError.message : "Unable to record customer receipt.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function reverseCustomerReceipt(receipt: CustomerReceipt) {
+    const reason = window.prompt(`Why are you reversing receipt ${receipt.receiptNumber}?`);
+    if (reason === null) return;
+    if (!reason.trim()) {
+      setError("A reversal reason is required.");
+      return;
+    }
+    if (!customerDetails) return;
+    setSaving(true);
+    setError("");
+    try {
+      const result = await getDesktopApi().customers.reverseReceipt({
+        receiptId: receipt.id,
+        reason,
+      });
+      if (!result.ok) throw new Error(result.error.message);
+      setCustomerDetails(result.data);
+      setCustomerStatement(null);
+      setNotice(`Receipt ${receipt.receiptNumber} reversed.`);
+      try {
+        await Promise.all([refreshCatalog(), refreshManagement()]);
+      } catch (refreshError) {
+        setError(`Receipt ${receipt.receiptNumber} was reversed, but balances could not be refreshed: ${refreshError instanceof Error ? refreshError.message : "refresh failed"}`);
+      }
+    } catch (reversalError) {
+      setError(reversalError instanceof Error ? reversalError.message : "Unable to reverse this customer receipt.");
     } finally {
       setSaving(false);
     }
@@ -724,18 +771,53 @@ export default function Home() {
         supplierId: supplierDetails.supplier.id,
         ...(paymentValues.purchaseId ? { purchaseId: paymentValues.purchaseId } : {}),
         amount: Number(paymentValues.amount),
-        account: paymentValues.account,
+        accountCode: paymentValues.accountCode,
         reference: paymentValues.reference,
         note: paymentValues.note,
       });
       if (!result.ok) throw new Error(result.error.message);
       setSupplierDetails(result.data);
-      await refreshManagement();
+      setPaymentPreview(result.data.payments[0] ?? null);
       setPaymentOpen(false);
-      setPaymentValues({ amount: "", account: "cash", reference: "", note: "", purchaseId: "" });
+      setPaymentValues({ amount: "", accountCode: "1000", reference: "", note: "", purchaseId: "" });
       setNotice("Supplier payment and Accounts Payable posting recorded.");
+      try {
+        await refreshManagement();
+      } catch (refreshError) {
+        setError(`Payment ${result.data.payments[0]?.paymentNumber ?? ""} was recorded, but balances could not be refreshed: ${refreshError instanceof Error ? refreshError.message : "refresh failed"}`);
+      }
     } catch (paymentError) {
       setError(paymentError instanceof Error ? paymentError.message : "Unable to record supplier payment.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function reverseSupplierPayment(payment: SupplierPayment) {
+    const reason = window.prompt(`Why are you reversing payment ${payment.paymentNumber}?`);
+    if (reason === null) return;
+    if (!reason.trim()) {
+      setError("A reversal reason is required.");
+      return;
+    }
+    if (!supplierDetails) return;
+    setSaving(true);
+    setError("");
+    try {
+      const result = await getDesktopApi().suppliers.reversePayment({
+        paymentId: payment.id,
+        reason,
+      });
+      if (!result.ok) throw new Error(result.error.message);
+      setSupplierDetails(result.data);
+      setNotice(`Payment ${payment.paymentNumber} reversed.`);
+      try {
+        await refreshManagement();
+      } catch (refreshError) {
+        setError(`Payment ${payment.paymentNumber} was reversed, but balances could not be refreshed: ${refreshError instanceof Error ? refreshError.message : "refresh failed"}`);
+      }
+    } catch (reversalError) {
+      setError(reversalError instanceof Error ? reversalError.message : "Unable to reverse this supplier payment.");
     } finally {
       setSaving(false);
     }
@@ -997,8 +1079,16 @@ export default function Home() {
                 tab={customerTab}
                 onTabChange={(tab) => setCustomerTab(tab)}
                 onEdit={() => openCustomerForm(customerDetails.customer)}
+                onReverseReceipt={(receipt) => void reverseCustomerReceipt(receipt)}
+                onPrintReceipt={(receipt) => setReceiptPreview(receipt)}
                 onReceive={() => {
-                  setReceiptValues({ amount: "", account: "cash", reference: "", note: "" });
+                  setReceiptValues({
+                    amount: "",
+                    accountCode: paymentAccounts[0]?.code ?? "1000",
+                    invoiceId: "",
+                    reference: "",
+                    note: "",
+                  });
                   setReceiptOpen(true);
                 }}
                 statement={customerStatement}
@@ -1096,6 +1186,39 @@ export default function Home() {
         </Modal>
       )}
 
+      {receiptPreview && customerDetails && (
+        <Modal title="Receipt preview" onClose={() => setReceiptPreview(null)}>
+          <article className="payment-printable">
+            <header><span>{businessConfig.name}</span><h2>Customer receipt</h2></header>
+            <div className="payment-document-row"><span>Receipt</span><strong>{receiptPreview.receiptNumber}</strong></div>
+            <div className="payment-document-row"><span>Date</span><strong>{formatDate(receiptPreview.createdAt)}</strong></div>
+            <div className="payment-document-row"><span>Received from</span><strong>{customerDetails.customer.name} ({customerDetails.customer.code})</strong></div>
+            <div className="payment-document-row"><span>Payment method</span><strong>{receiptPreview.paymentMethod}</strong></div>
+            <div className="payment-document-row"><span>Applied to</span><strong>{receiptPreview.invoiceNumber ?? "Advance payment"}</strong></div>
+            <div className="payment-document-row"><span>Reference / note</span><strong>{receiptPreview.reference || receiptPreview.note || "—"}</strong></div>
+            <div className="payment-document-total"><span>Amount received</span><strong>{formatMoney(receiptPreview.amountMinor)}</strong></div>
+            {receiptPreview.reversedAt && <p className="payment-reversed-note">Reversed: {receiptPreview.reversalReason}</p>}
+          </article>
+          <div className="modal-actions no-print"><button className="secondary-button" onClick={() => setReceiptPreview(null)}>Close</button><button className="primary-button" onClick={() => window.print()}>Print receipt</button></div>
+        </Modal>
+      )}
+
+      {paymentPreview && supplierDetails && (
+        <Modal title="Payment voucher preview" onClose={() => setPaymentPreview(null)}>
+          <article className="payment-printable">
+            <header><span>{businessConfig.name}</span><h2>Supplier payment voucher</h2></header>
+            <div className="payment-document-row"><span>Voucher</span><strong>{paymentPreview.paymentNumber}</strong></div>
+            <div className="payment-document-row"><span>Date</span><strong>{formatDate(paymentPreview.createdAt)}</strong></div>
+            <div className="payment-document-row"><span>Paid to</span><strong>{supplierDetails.supplier.name} ({supplierDetails.supplier.code})</strong></div>
+            <div className="payment-document-row"><span>Payment method</span><strong>{paymentPreview.paymentMethod}</strong></div>
+            <div className="payment-document-row"><span>Reference / note</span><strong>{paymentPreview.reference || paymentPreview.note || "—"}</strong></div>
+            <div className="payment-document-total"><span>Amount paid</span><strong>{formatMoney(paymentPreview.amountMinor)}</strong></div>
+            {paymentPreview.reversedAt && <p className="payment-reversed-note">Reversed: {paymentPreview.reversalReason}</p>}
+          </article>
+          <div className="modal-actions no-print"><button className="secondary-button" onClick={() => setPaymentPreview(null)}>Close</button><button className="primary-button" onClick={() => window.print()}>Print voucher</button></div>
+        </Modal>
+      )}
+
       {customerFormOpen && (
         <Modal title={customerEditing ? "Edit customer" : "Add customer"} onClose={() => setCustomerFormOpen(false)}>
           {error && <div className="error-banner modal-error" role="alert">{error}</div>}
@@ -1120,8 +1243,13 @@ export default function Home() {
           {error && <div className="error-banner modal-error" role="alert">{error}</div>}
           <p className="adjustment-product">Outstanding receivable: <strong>{formatMoney(customerDetails.customer.outstandingMinor)}</strong></p>
           <form className="adjustment-form" onSubmit={(event) => void saveCustomerReceipt(event)}>
-            <FormField label="Amount" required><div className="input-prefix"><span>PKR</span><input required type="number" min="0.01" max={customerDetails.customer.outstandingMinor / 100} step="0.01" value={receiptValues.amount} onChange={(event) => setReceiptValues({ ...receiptValues, amount: event.target.value })} /></div></FormField>
-            <FormField label="Received into" required><select value={receiptValues.account} onChange={(event) => setReceiptValues({ ...receiptValues, account: event.target.value as "cash" | "bank" })}><option value="cash">Cash</option><option value="bank">Bank</option></select></FormField>
+            <FormField label="Amount" required><div className="input-prefix"><span>PKR</span><input required type="number" min="0.01" max={receiptValues.invoiceId ? (customerDetails.sales.find((invoice) => invoice.id === receiptValues.invoiceId)?.dueMinor ?? 0) / 100 : undefined} step="0.01" value={receiptValues.amount} onChange={(event) => setReceiptValues({ ...receiptValues, amount: event.target.value })} /></div></FormField>
+            <FormField label="Apply to" required><select value={receiptValues.invoiceId} onChange={(event) => {
+              const invoiceId = event.target.value;
+              const invoice = customerDetails.sales.find((item) => item.id === invoiceId);
+              setReceiptValues({ ...receiptValues, invoiceId, amount: invoice ? (invoice.dueMinor / 100).toFixed(2) : "" });
+            }}><option value="">Advance payment (unallocated)</option>{customerDetails.sales.filter((invoice) => invoice.dueMinor > 0).map((invoice) => <option key={invoice.id} value={invoice.id}>{invoice.invoiceNumber} · Due {formatMoney(invoice.dueMinor)}</option>)}</select></FormField>
+            <FormField label="Received into" required><select value={receiptValues.accountCode} onChange={(event) => setReceiptValues({ ...receiptValues, accountCode: event.target.value })}>{paymentAccounts.map((account) => <option key={account.code} value={account.code}>{account.name}</option>)}</select></FormField>
             <FormField label="Reference"><input maxLength={100} value={receiptValues.reference} onChange={(event) => setReceiptValues({ ...receiptValues, reference: event.target.value })} /></FormField>
             <FormField label="Note"><input maxLength={160} value={receiptValues.note} onChange={(event) => setReceiptValues({ ...receiptValues, note: event.target.value })} /></FormField>
             <div className="modal-actions"><button className="secondary-button" type="button" onClick={() => setReceiptOpen(false)}>Cancel</button><button className="primary-button" disabled={saving}>{saving ? "Posting…" : "Record receipt"}</button></div>
@@ -1264,7 +1392,7 @@ export default function Home() {
               setPurchaseOpen(true);
             }}>Receive purchase</button>
             <button className="secondary-button" onClick={() => {
-              setPaymentValues({ amount: "", account: "cash", reference: "", note: "", purchaseId: "" });
+              setPaymentValues({ amount: "", accountCode: paymentAccounts[0]?.code ?? "1000", reference: "", note: "", purchaseId: "" });
               setPaymentOpen(true);
             }}>Record payment</button>
             <button className="secondary-button" onClick={() => setSupplierAdjustmentOpen(true)}>Adjust balance</button>
@@ -1278,8 +1406,8 @@ export default function Home() {
           <div className="history-block">
             <div className="section-heading compact"><div><h3>Purchase history</h3><p>Supplier receipts update inventory and AP in the same transaction.</p></div></div>
             {supplierDetails.purchases.length === 0 ? <p className="muted-message">No purchases recorded.</p> : supplierDetails.purchases.map((purchase) => <div className="history-row" key={purchase.id}><div><strong>{purchase.billNumber} · {purchase.purchaseDate}</strong><span>{purchase.reference || purchase.paymentMode.toUpperCase()} · {purchase.items.map((item) => `${item.sku} ${formatMeters(item.quantityMm)}`).join(", ")}{purchase.additionalCostsMinor > 0 ? ` · Acquisition costs ${formatMoney(purchase.additionalCostsMinor)}` : ""}</span></div><div className="history-price"><strong>{formatMoney(purchase.totalMinor)}</strong><span>Paid {formatMoney(purchase.paidMinor)} · Due {formatMoney(purchase.dueMinor)}</span></div></div>)}
-            <div className="section-heading compact"><div><h3>Payments</h3><p>Payments are posted against Cash or Bank.</p></div></div>
-            {supplierDetails.payments.length === 0 ? <p className="muted-message">No payments recorded.</p> : supplierDetails.payments.map((payment) => <div className="history-row" key={payment.id}><div><strong>{payment.paymentNumber}</strong><span>{formatDate(payment.createdAt)} · {payment.account.toUpperCase()}{payment.reference ? ` · ${payment.reference}` : ""}</span></div><div className="history-price"><strong>{formatMoney(payment.amountMinor)}</strong></div></div>)}
+            <div className="section-heading compact"><div><h3>Payment vouchers</h3><p>Payments use configured payment accounts and support invoice-level partial settlement.</p></div></div>
+            {supplierDetails.payments.length === 0 ? <p className="muted-message">No payments recorded.</p> : supplierDetails.payments.map((payment) => <div className="history-row" key={payment.id}><div><strong>{payment.paymentNumber}{payment.reversedAt ? " · REVERSED" : ""}</strong><span>{formatDate(payment.createdAt)} · {payment.paymentMethod}{payment.reference ? ` · ${payment.reference}` : ""}{payment.note ? ` · ${payment.note}` : ""}{payment.reversalReason ? ` · Reversal: ${payment.reversalReason}` : ""}</span></div><div className="history-price"><strong>{formatMoney(payment.amountMinor)}</strong><div className="payment-history-actions"><button type="button" className="table-action" onClick={() => setPaymentPreview(payment)}>Print voucher</button>{!payment.reversedAt && <button type="button" className="table-action danger" disabled={saving} onClick={() => void reverseSupplierPayment(payment)}>Reverse</button>}</div></div></div>)}
           </div>
         </Modal>
       )}
@@ -1329,7 +1457,7 @@ export default function Home() {
               });
             }}><option value="">Unallocated supplier payment</option>{supplierDetails.purchases.filter((purchase) => purchase.dueMinor > 0).map((purchase) => <option key={purchase.id} value={purchase.id}>{purchase.billNumber} · Due {formatMoney(purchase.dueMinor)}</option>)}</select></FormField>
             <FormField label="Amount" required><div className="input-prefix"><span>PKR</span><input required type="number" min="0.01" step="0.01" value={paymentValues.amount} onChange={(event) => setPaymentValues({ ...paymentValues, amount: event.target.value })} /></div></FormField>
-            <FormField label="Paid from" required><select value={paymentValues.account} onChange={(event) => setPaymentValues({ ...paymentValues, account: event.target.value as "cash" | "bank" })}><option value="cash">Cash</option><option value="bank">Bank</option></select></FormField>
+            <FormField label="Paid from" required><select value={paymentValues.accountCode} onChange={(event) => setPaymentValues({ ...paymentValues, accountCode: event.target.value })}>{paymentAccounts.map((account) => <option key={account.code} value={account.code}>{account.name}</option>)}</select></FormField>
             <FormField label="Reference"><input maxLength={100} value={paymentValues.reference} onChange={(event) => setPaymentValues({ ...paymentValues, reference: event.target.value })} /></FormField>
             <FormField label="Note"><input maxLength={160} value={paymentValues.note} onChange={(event) => setPaymentValues({ ...paymentValues, note: event.target.value })} /></FormField>
             <div className="modal-actions"><button className="secondary-button" type="button" onClick={() => setPaymentOpen(false)}>Cancel</button><button className="primary-button" disabled={saving}>{saving ? "Posting…" : "Record payment"}</button></div>
@@ -1475,6 +1603,8 @@ function CustomerDetailPage({
   onTabChange,
   onEdit,
   onReceive,
+  onReverseReceipt,
+  onPrintReceipt,
   statement,
   statementDates,
   onStatementDatesChange,
@@ -1486,6 +1616,8 @@ function CustomerDetailPage({
   onTabChange: (tab: CustomerTab) => void;
   onEdit: () => void;
   onReceive: () => void;
+  onReverseReceipt: (receipt: CustomerReceipt) => void;
+  onPrintReceipt: (receipt: CustomerReceipt) => void;
   statement: CustomerStatement | null;
   statementDates: { from: string; to: string };
   onStatementDatesChange: (dates: { from: string; to: string }) => void;
@@ -1502,13 +1634,14 @@ function CustomerDetailPage({
       </div>
       <div className="detail-metrics">
         <Metric label="Outstanding receivable" value={formatMoney(customer.outstandingMinor)} />
+        <Metric label="Customer advances" value={formatMoney(customer.advanceMinor)} />
         <Metric label="Credit limit" value={formatMoney(customer.creditLimitMinor)} />
         <Metric label="Available credit" value={formatMoney(availableCreditMinor)} />
         <Metric label="Payment terms" value={`${customer.paymentTermsDays} days`} />
       </div>
       <div className="detail-actions customer-actions">
         <button className="secondary-button" onClick={onEdit}>Edit customer</button>
-        <button className="primary-button" onClick={onReceive} disabled={customer.outstandingMinor <= 0}>Record receipt</button>
+        <button className="primary-button" onClick={onReceive}>Record receipt / advance</button>
       </div>
       <div className="inventory-tabs customer-tabs" role="tablist" aria-label="Customer account details">
         {([
@@ -1523,7 +1656,7 @@ function CustomerDetailPage({
       {tab === "overview" && (
         <div className="customer-overview">
           <section className="panel customer-contact">
-            <div className="section-heading panel-section-heading"><div><h2>Account overview</h2><p>Customer receivables are calculated from the Accounts Receivable ledger.</p></div></div>
+            <div className="section-heading panel-section-heading"><div><h2>Account overview</h2><p>Receivables and unallocated advances are tracked separately.</p></div></div>
             <dl><div><dt>Customer code</dt><dd>{customer.code}</dd></div><div><dt>Phone</dt><dd>{customer.phone || "—"}</dd></div><div><dt>Address</dt><dd>{customer.address || "—"}</dd></div><div><dt>Sales invoices</dt><dd>{customer.salesCount}</dd></div><div><dt>Receipts</dt><dd>{customer.receiptCount}</dd></div></dl>
           </section>
           <section className="panel customer-recent">
@@ -1545,13 +1678,16 @@ function CustomerDetailPage({
       )}
       {tab === "payments" && (
         <div className="customer-tab-content">
-          <div className="section-heading"><div><h2>Payments received</h2><p>Receipts are posted to Cash/Bank and reduce this customer’s receivable.</p></div><span className="history-count">{details.receipts.length} receipts</span></div>
+          <div className="section-heading"><div><h2>Payments received</h2><p>Receipts are allocated to invoices or recorded as customer advances.</p></div><span className="history-count">{details.receipts.length} receipts</span></div>
           {details.receipts.length === 0 ? <EmptyState title="No receipts recorded" copy="Customer payments will appear here." /> : (
             <div className="panel"><div className="table-wrap"><table>
-              <thead><tr><th>Receipt</th><th>Date</th><th>Account</th><th>Reference / note</th><th>Amount</th></tr></thead>
+              <thead><tr><th>Receipt</th><th>Date</th><th>Payment method</th><th>Applied to</th><th>Reference / note</th><th>Amount</th><th>Actions</th></tr></thead>
               <tbody>{details.receipts.map((receipt) => <tr key={receipt.id}>
-                <td><strong>{receipt.receiptNumber}</strong></td><td>{formatDate(receipt.createdAt)}</td><td>{receipt.account.toUpperCase()}</td>
-                <td>{receipt.reference || receipt.note || "—"}</td><td><strong>{formatMoney(receipt.amountMinor)}</strong></td>
+                <td><strong>{receipt.receiptNumber}</strong>{receipt.reversedAt && <small className="reversed-label">Reversed</small>}</td>
+                <td>{formatDate(receipt.createdAt)}</td><td>{receipt.paymentMethod}</td><td>{receipt.invoiceNumber ?? "Advance"}</td>
+                <td>{receipt.reference || receipt.note || "—"}{receipt.reversalReason && <small className="reversed-label">Reason: {receipt.reversalReason}</small>}</td>
+                <td><strong>{formatMoney(receipt.amountMinor)}</strong></td>
+                <td><div className="payment-history-actions"><button type="button" className="table-action" onClick={() => onPrintReceipt(receipt)}>Print</button>{!receipt.reversedAt && <button type="button" className="table-action danger" onClick={() => onReverseReceipt(receipt)}>Reverse</button>}</div></td>
               </tr>)}</tbody>
             </table></div></div>
           )}

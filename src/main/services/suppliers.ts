@@ -5,6 +5,7 @@ import type {
   SupplierInput,
   SupplierListInput,
   SupplierPaymentInput,
+  SupplierPaymentReversalInput,
   SupplierPurchaseInput,
   SupplierStatementInput,
   UpdateSupplierInput,
@@ -65,10 +66,13 @@ interface PaymentRow {
   purchase_id: string | null;
   payment_number: string;
   account_code: string;
+  account_name: string;
   amount_minor: number;
   reference: string;
   note: string;
   created_at: string;
+  reversed_at: string | null;
+  reversal_reason: string;
 }
 
 function toSupplier(row: SupplierRow): Supplier {
@@ -154,8 +158,11 @@ export class SupplierService {
       };
     });
     const paymentRows = this.database.prepare(`
-      SELECT id, purchase_id, payment_number, account_code, amount_minor, reference, note, created_at
-      FROM supplier_payments WHERE supplier_id = ? ORDER BY created_at DESC
+      SELECT p.id, p.purchase_id, p.payment_number, p.account_code, a.name AS account_name,
+             p.amount_minor, p.reference, p.note, p.created_at, p.reversed_at, p.reversal_reason
+      FROM supplier_payments p
+      JOIN ledger_accounts a ON a.code = p.account_code
+      WHERE p.supplier_id = ? ORDER BY p.created_at DESC, p.rowid DESC
     `).all(id) as PaymentRow[];
     return {
       supplier,
@@ -165,10 +172,13 @@ export class SupplierService {
         purchaseId: payment.purchase_id ?? undefined,
         paymentNumber: payment.payment_number,
         account: payment.account_code === "1010" ? "bank" : "cash",
+        paymentMethod: payment.account_name,
         amountMinor: payment.amount_minor,
         reference: payment.reference,
         note: payment.note,
         createdAt: payment.created_at,
+        reversedAt: payment.reversed_at ?? undefined,
+        reversalReason: payment.reversal_reason || undefined,
       })),
     };
   }
@@ -343,9 +353,18 @@ export class SupplierService {
     const id = randomUUID();
     const paymentNumber = `PAY-${new Date().toISOString().slice(0, 10).replaceAll("-", "")}-${id.slice(0, 6).toUpperCase()}`;
     const amount = Math.round(input.amount * 100);
+    const accountCode = input.accountCode ?? (input.account === "bank" ? "1010" : "1000");
     const now = new Date().toISOString();
     const transaction = this.database.transaction(() => {
       this.requireSupplier(input.supplierId);
+      this.requirePaymentAccount(accountCode);
+      const outstanding = this.database.prepare(`
+        SELECT COALESCE(SUM(credit_minor - debit_minor), 0) AS balance
+        FROM ledger_postings WHERE account_code = '2100' AND supplier_id = ?
+      `).get(input.supplierId) as { balance: number };
+      if (amount > outstanding.balance) {
+        throw new FabricServiceError("VALIDATION", "Payment cannot exceed the supplier's outstanding payable balance.");
+      }
       if (input.purchaseId) {
         const purchase = this.database.prepare(`
           SELECT total_minor, paid_minor FROM supplier_purchases
@@ -363,16 +382,54 @@ export class SupplierService {
           id, supplier_id, purchase_id, payment_number, account_code, amount_minor, reference, note, created_at
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
-        id, input.supplierId, input.purchaseId ?? null, paymentNumber, input.account === "bank" ? "1010" : "1000",
+        id, input.supplierId, input.purchaseId ?? null, paymentNumber, accountCode,
         amount, input.reference, input.note, now,
       );
       postJournal(this.database, "supplier_payment", paymentNumber, now, [
         { accountCode: "2100", supplierId: input.supplierId, debitMinor: amount },
-        { accountCode: input.account === "bank" ? "1010" : "1000", creditMinor: amount },
+        { accountCode, creditMinor: amount },
       ]);
     });
     transaction.immediate();
     return this.get(input.supplierId);
+  }
+
+  reversePayment(input: SupplierPaymentReversalInput): SupplierDetails {
+    let supplierId = "";
+    const now = new Date().toISOString();
+    const transaction = this.database.transaction(() => {
+      const payment = this.database.prepare(`
+        SELECT id, supplier_id, purchase_id, payment_number, account_code, amount_minor, reversed_at
+        FROM supplier_payments WHERE id = ?
+      `).get(input.paymentId) as {
+        id: string;
+        supplier_id: string;
+        purchase_id: string | null;
+        payment_number: string;
+        account_code: string;
+        amount_minor: number;
+        reversed_at: string | null;
+      } | undefined;
+      if (!payment) throw new FabricServiceError("NOT_FOUND", "Supplier payment not found.");
+      if (payment.reversed_at) throw new FabricServiceError("CONFLICT", "This supplier payment has already been reversed.");
+      supplierId = payment.supplier_id;
+      if (payment.purchase_id) {
+        const result = this.database.prepare(`
+          UPDATE supplier_purchases SET paid_minor = paid_minor - ?
+          WHERE id = ? AND paid_minor >= ?
+        `).run(payment.amount_minor, payment.purchase_id, payment.amount_minor);
+        if (result.changes === 0) throw new FabricServiceError("CONFLICT", "The payment can no longer be reversed against this purchase.");
+      }
+      this.database.prepare(`
+        UPDATE supplier_payments SET reversed_at = ?, reversal_reason = ? WHERE id = ?
+      `).run(now, input.reason, payment.id);
+      postJournal(this.database, "supplier_payment_reversal", payment.payment_number, now, [
+        { accountCode: payment.account_code, debitMinor: payment.amount_minor },
+        { accountCode: "2100", supplierId: payment.supplier_id, creditMinor: payment.amount_minor },
+      ]);
+    });
+    transaction.immediate();
+    return this.get(supplierId);
   }
 
   adjust(input: Omit<SupplierAdjustmentInput, "ownerPin">, authorizedUser: string): SupplierDetails {
@@ -475,6 +532,14 @@ export class SupplierService {
   private requireSupplier(id: string): void {
     const row = this.database.prepare("SELECT id FROM suppliers WHERE id = ?").get(id);
     if (!row) throw new FabricServiceError("NOT_FOUND", "Supplier not found.");
+  }
+
+  private requirePaymentAccount(code: string): void {
+    const row = this.database.prepare(`
+      SELECT code FROM ledger_accounts
+      WHERE code = ? AND account_type = 'asset' AND code NOT IN ('1200', '1300')
+    `).get(code);
+    if (!row) throw new FabricServiceError("VALIDATION", "Choose a configured cash or payment account.");
   }
 
   private isUniqueViolation(error: unknown): boolean {

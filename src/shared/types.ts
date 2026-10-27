@@ -157,10 +157,18 @@ export interface SupplierPayment {
   purchaseId?: string;
   paymentNumber: string;
   account: "cash" | "bank";
+  paymentMethod: string;
   amountMinor: number;
   reference: string;
   note: string;
   createdAt: string;
+  reversedAt?: string;
+  reversalReason?: string;
+}
+
+export interface PaymentAccount {
+  code: string;
+  name: string;
 }
 
 export interface SupplierStatementLine {
@@ -197,6 +205,7 @@ export interface Customer {
   paymentTermsDays: number;
   active: boolean;
   outstandingMinor: number;
+  advanceMinor: number;
   salesCount: number;
   receiptCount: number;
   createdAt: string;
@@ -206,11 +215,16 @@ export interface Customer {
 export interface CustomerReceipt {
   id: string;
   receiptNumber: string;
+  invoiceId?: string;
+  invoiceNumber?: string;
   account: "cash" | "bank";
+  paymentMethod: string;
   amountMinor: number;
   reference: string;
   note: string;
   createdAt: string;
+  reversedAt?: string;
+  reversalReason?: string;
 }
 
 export interface CustomerStatementLine {
@@ -266,6 +280,7 @@ export interface DesktopApi {
     update(input: import("./contracts").UpdateSupplierInput): Promise<IpcResult<Supplier>>;
     receive(input: SupplierPurchaseInput): Promise<IpcResult<SupplierDetails>>;
     pay(input: SupplierPaymentInput): Promise<IpcResult<SupplierDetails>>;
+    reversePayment(input: import("./contracts").SupplierPaymentReversalInput): Promise<IpcResult<SupplierDetails>>;
     adjust(input: SupplierAdjustmentInput): Promise<IpcResult<SupplierDetails>>;
     statement(input: SupplierStatementInput): Promise<IpcResult<SupplierStatement>>;
     reconcile(): Promise<IpcResult<{ controlMinor: number; subledgerMinor: number; differenceMinor: number }>>;
@@ -276,6 +291,8 @@ export interface DesktopApi {
     create(input: CustomerInput): Promise<IpcResult<Customer>>;
     update(input: UpdateCustomerInput): Promise<IpcResult<Customer>>;
     receive(input: CustomerReceiptInput): Promise<IpcResult<CustomerDetails>>;
+    reverseReceipt(input: import("./contracts").CustomerReceiptReversalInput): Promise<IpcResult<CustomerDetails>>;
+    paymentAccounts(): Promise<IpcResult<PaymentAccount[]>>;
     statement(input: CustomerStatementInput): Promise<IpcResult<CustomerStatement>>;
   };
   invoices: {

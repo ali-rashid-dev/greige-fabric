@@ -5,6 +5,7 @@ import {
   customerInputSchema,
   customerListSchema,
   customerReceiptSchema,
+  customerReceiptReversalSchema,
   customerStatementSchema,
   fabricFiltersSchema,
   fabricIdSchema,
@@ -17,6 +18,7 @@ import {
   supplierInputSchema,
   supplierListSchema,
   supplierPaymentSchema,
+  supplierPaymentReversalSchema,
   supplierPurchaseSchema,
   supplierStatementSchema,
   updateFabricSchema,
@@ -186,6 +188,10 @@ export function registerIpcHandlers(
     supplierPaymentSchema, (service, input) => service.pay(input),
   );
   registerHandler(
+    channels.reverseSupplierPayment, suppliers, developmentUrl, productionFileUrl,
+    supplierPaymentReversalSchema, (service, input) => service.reversePayment(input),
+  );
+  registerHandler(
     channels.adjustSupplier, suppliers, developmentUrl, productionFileUrl,
     supplierAdjustmentSchema,
     async (service, input) => {
@@ -230,6 +236,14 @@ export function registerIpcHandlers(
   registerHandler(
     channels.receiveCustomer, customers, developmentUrl, productionFileUrl,
     customerReceiptSchema, (service, input) => service.receive(input),
+  );
+  registerHandler(
+    channels.reverseCustomerReceipt, customers, developmentUrl, productionFileUrl,
+    customerReceiptReversalSchema, (service, input) => service.reverseReceipt(input),
+  );
+  registerHandler(
+    channels.customerPaymentAccounts, customers, developmentUrl, productionFileUrl,
+    z.undefined(), (service) => service.paymentAccounts(),
   );
   registerHandler(
     channels.customerStatement, customers, developmentUrl, productionFileUrl,

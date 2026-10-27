@@ -449,6 +449,7 @@ describe("fabric quality catalog", () => {
 
       const receiptInput = customerReceiptSchema.parse({
         customerId: customer.id,
+        invoiceId: invoice.id,
         amount: 15_000,
         account: "bank",
         reference: "Bank transfer",
@@ -574,6 +575,150 @@ describe("fabric quality catalog", () => {
       expect(inventory.movements()).toHaveLength(movementCount);
       expect(service.listInvoices()).toHaveLength(invoiceCount);
       expect(customers.get(customer.id).customer.outstandingMinor).toBe(60_000);
+    } finally {
+      close();
+    }
+  });
+
+  it("persists invoice receipt allocations and customer balances across a database restart", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "greige-receipt-restart-"));
+    temporaryDirectories.push(directory);
+    const databasePath = path.join(directory, "pos.sqlite");
+    let database = await openDatabase(databasePath, migrationsDirectory);
+    try {
+      let service = new FabricService(database);
+      const inventory = new InventoryService(database);
+      let customers = new CustomerService(database);
+      const fabric = service.create(fabricInputSchema.parse(sampleFabric));
+      inventory.openStock({
+        fabricId: fabric.id,
+        quantityMeters: 100,
+        unitCost: 145,
+        reference: "RECEIPT-RESTART-STOCK",
+        reason: "Receipt restart test stock",
+      }, "Owner");
+      const customer = customers.create({
+        code: "CUS-RESTART",
+        name: "Restart Receipt Customer",
+        phone: "",
+        address: "",
+        openingBalance: 0,
+        creditLimit: 100_000,
+        paymentTermsDays: 30,
+      }, "System");
+      const invoice = service.createInvoice(createInvoiceSchema.parse({
+        customerId: customer.id,
+        items: [{ fabricId: fabric.id, quantityMeters: 100 }],
+      }));
+      const receipt = customers.receive(customerReceiptSchema.parse({
+        customerId: customer.id,
+        invoiceId: invoice.id,
+        amount: 5_000,
+        accountCode: "1010",
+        reference: "BANK-5000",
+        note: "Invoice installment",
+      }));
+      expect(receipt.customer.outstandingMinor).toBe(invoice.totalMinor - 500_000);
+      expect(receipt.sales[0].dueMinor).toBe(invoice.totalMinor - 500_000);
+      expect(receipt.receipts[0]).toMatchObject({
+        invoiceId: invoice.id,
+        paymentMethod: "Bank",
+        amountMinor: 500_000,
+      });
+
+      database.close();
+      database = await openDatabase(databasePath, migrationsDirectory);
+      service = new FabricService(database);
+      customers = new CustomerService(database);
+      const reopened = customers.get(customer.id);
+      expect(reopened.customer.outstandingMinor).toBe(invoice.totalMinor - 500_000);
+      expect(reopened.sales[0].dueMinor).toBe(invoice.totalMinor - 500_000);
+      expect(reopened.receipts).toHaveLength(1);
+      expect(reopened.receipts[0]).toMatchObject({
+        receiptNumber: receipt.receipts[0].receiptNumber,
+        amountMinor: 500_000,
+        invoiceNumber: invoice.invoiceNumber,
+      });
+
+      const reversed = customers.reverseReceipt({
+        receiptId: reopened.receipts[0].id,
+        reason: "Duplicate bank confirmation",
+      });
+      expect(reversed.customer.outstandingMinor).toBe(invoice.totalMinor);
+      expect(reversed.sales[0].dueMinor).toBe(invoice.totalMinor);
+      expect(reversed.receipts[0].reversedAt).toBeTruthy();
+      expect(() => customers.reverseReceipt({
+        receiptId: reopened.receipts[0].id,
+        reason: "Duplicate reversal",
+      })).toThrowError(new FabricServiceError("CONFLICT", "This customer receipt has already been reversed."));
+      expect(service.listInvoices()).toHaveLength(1);
+    } finally {
+      database.close();
+    }
+  });
+
+  it("records advances separately from receivables and reverses supplier vouchers atomically", async () => {
+    const { database, suppliers, customers, close } = await createService();
+    try {
+      database.prepare(`
+        INSERT INTO ledger_accounts (code, name, account_type)
+        VALUES ('1020', 'Mobile Wallet', 'asset')
+      `).run();
+      const accounts = customers.paymentAccounts();
+      expect(accounts).toContainEqual({ code: "1020", name: "Mobile Wallet" });
+
+      const customer = customers.create({
+        code: "CUS-ADVANCE",
+        name: "Advance Customer",
+        phone: "",
+        address: "",
+        openingBalance: 0,
+        creditLimit: 0,
+        paymentTermsDays: 0,
+      }, "System");
+      const advance = customers.receive(customerReceiptSchema.parse({
+        customerId: customer.id,
+        amount: 5_000,
+        accountCode: "1020",
+        reference: "ADVANCE-1",
+      }));
+      expect(advance.customer.outstandingMinor).toBe(0);
+      expect(advance.customer.advanceMinor).toBe(500_000);
+      const reversedAdvance = customers.reverseReceipt({
+        receiptId: advance.receipts[0].id,
+        reason: "Customer requested refund",
+      });
+      expect(reversedAdvance.customer.outstandingMinor).toBe(0);
+      expect(reversedAdvance.customer.advanceMinor).toBe(0);
+
+      const supplier = suppliers.create({
+        code: "SUP-REVERSE",
+        name: "Voucher Supplier",
+        phone: "",
+        address: "",
+        contactName: "",
+        email: "",
+        openingBalance: 10_000,
+      }, "System");
+      const paymentDetails = suppliers.pay({
+        supplierId: supplier.id,
+        amount: 2_500,
+        accountCode: "1020",
+        reference: "WALLET-PAY",
+        note: "Partial settlement",
+      });
+      expect(paymentDetails.supplier.outstandingMinor).toBe(750_000);
+      expect(paymentDetails.payments[0]).toMatchObject({
+        paymentMethod: "Mobile Wallet",
+        amountMinor: 250_000,
+      });
+      const reversedPayment = suppliers.reversePayment({
+        paymentId: paymentDetails.payments[0].id,
+        reason: "Wrong supplier selected",
+      });
+      expect(reversedPayment.supplier.outstandingMinor).toBe(1_000_000);
+      expect(reversedPayment.payments[0].reversedAt).toBeTruthy();
+      expect(suppliers.reconcile().differenceMinor).toBe(0);
     } finally {
       close();
     }

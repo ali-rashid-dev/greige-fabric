@@ -9,6 +9,7 @@ import type {
   Invoice,
   InventoryMovement,
   InventoryReport,
+  PaymentAccount,
   Supplier,
   SupplierDetails,
   SupplierStatement,
@@ -176,9 +177,18 @@ export const supplierPaymentSchema = z.object({
   purchaseId: z.string().uuid().optional(),
   amount: z.number().finite().positive().max(1_000_000_000)
     .refine((value) => hasPrecision(value, 100), "Use up to 2 decimal places"),
-  account: z.enum(["cash", "bank"]),
+  account: z.enum(["cash", "bank"]).optional(),
+  accountCode: z.string().trim().min(1).max(40).optional(),
   reference: z.string().trim().max(100).default(""),
   note: z.string().trim().max(160).default(""),
+}).refine((input) => input.account !== undefined || input.accountCode !== undefined, {
+  path: ["accountCode"],
+  message: "Choose a configured payment account.",
+});
+
+export const supplierPaymentReversalSchema = z.object({
+  paymentId: z.string().uuid(),
+  reason: z.string().trim().min(1, "A reversal reason is required").max(160),
 });
 
 export const supplierAdjustmentSchema = z.object({
@@ -242,11 +252,21 @@ export const customerListSchema = z.object({
 
 export const customerReceiptSchema = z.object({
   customerId: z.string().uuid(),
+  invoiceId: z.string().uuid().optional(),
   amount: z.number().finite().positive().max(1_000_000_000)
     .refine((value) => hasPrecision(value, 100), "Use up to 2 decimal places"),
-  account: z.enum(["cash", "bank"]),
+  account: z.enum(["cash", "bank"]).optional(),
+  accountCode: z.string().trim().min(1).max(40).optional(),
   reference: z.string().trim().max(100).default(""),
   note: z.string().trim().max(160).default(""),
+}).refine((input) => input.account !== undefined || input.accountCode !== undefined, {
+  path: ["accountCode"],
+  message: "Choose a configured payment account.",
+});
+
+export const customerReceiptReversalSchema = z.object({
+  receiptId: z.string().uuid(),
+  reason: z.string().trim().min(1, "A reversal reason is required").max(160),
 });
 
 export const customerStatementSchema = z.object({
@@ -281,6 +301,7 @@ export type SupplierInput = z.infer<typeof supplierInputSchema>;
 export type UpdateSupplierInput = z.infer<typeof updateSupplierSchema>;
 export type SupplierPurchaseInput = z.infer<typeof supplierPurchaseSchema>;
 export type SupplierPaymentInput = z.infer<typeof supplierPaymentSchema>;
+export type SupplierPaymentReversalInput = z.infer<typeof supplierPaymentReversalSchema>;
 export type SupplierAdjustmentInput = z.infer<typeof supplierAdjustmentSchema>;
 export type SupplierStatementInput = z.infer<typeof supplierStatementSchema>;
 export type SupplierListInput = z.input<typeof supplierListSchema>;
@@ -288,6 +309,7 @@ export type CustomerInput = z.infer<typeof customerInputSchema>;
 export type UpdateCustomerInput = z.infer<typeof updateCustomerSchema>;
 export type CustomerListInput = z.input<typeof customerListSchema>;
 export type CustomerReceiptInput = z.infer<typeof customerReceiptSchema>;
+export type CustomerReceiptReversalInput = z.infer<typeof customerReceiptReversalSchema>;
 export type CustomerStatementInput = z.infer<typeof customerStatementSchema>;
 
 export type IpcErrorCode =
@@ -320,6 +342,8 @@ export interface IpcContract {
   "customers:create": { input: CustomerInput; output: Customer };
   "customers:update": { input: UpdateCustomerInput; output: Customer };
   "customers:receive": { input: CustomerReceiptInput; output: CustomerDetails };
+  "customers:reverse-receipt": { input: CustomerReceiptReversalInput; output: CustomerDetails };
+  "customers:payment-accounts": { input: undefined; output: PaymentAccount[] };
   "customers:statement": { input: CustomerStatementInput; output: CustomerStatement };
   "auth:pin-status": { input: undefined; output: { configured: boolean } };
   "auth:set-pin": { input: z.infer<typeof pinSetupSchema>; output: { configured: boolean } };
@@ -329,6 +353,7 @@ export interface IpcContract {
   "suppliers:update": { input: UpdateSupplierInput; output: Supplier };
   "suppliers:receive": { input: SupplierPurchaseInput; output: SupplierDetails };
   "suppliers:pay": { input: SupplierPaymentInput; output: SupplierDetails };
+  "suppliers:reverse-payment": { input: SupplierPaymentReversalInput; output: SupplierDetails };
   "suppliers:adjust": { input: SupplierAdjustmentInput; output: SupplierDetails };
   "suppliers:statement": { input: SupplierStatementInput; output: SupplierStatement };
   "suppliers:reconcile": { input: undefined; output: { controlMinor: number; subledgerMinor: number; differenceMinor: number } };

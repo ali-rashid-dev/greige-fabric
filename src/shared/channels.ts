@@ -19,6 +19,7 @@ export const channels = {
   updateSupplier: "suppliers:update",
   receiveSupplierPurchase: "suppliers:receive",
   paySupplier: "suppliers:pay",
+  reverseSupplierPayment: "suppliers:reverse-payment",
   adjustSupplier: "suppliers:adjust",
   supplierStatement: "suppliers:statement",
   supplierReconcile: "suppliers:reconcile",
@@ -27,5 +28,7 @@ export const channels = {
   createCustomer: "customers:create",
   updateCustomer: "customers:update",
   receiveCustomer: "customers:receive",
+  reverseCustomerReceipt: "customers:reverse-receipt",
+  customerPaymentAccounts: "customers:payment-accounts",
   customerStatement: "customers:statement",
 } as const;

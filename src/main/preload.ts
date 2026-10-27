@@ -30,6 +30,7 @@ const api: DesktopApi = {
     update: (input) => ipcRenderer.invoke(channels.updateSupplier, input),
     receive: (input) => ipcRenderer.invoke(channels.receiveSupplierPurchase, input),
     pay: (input) => ipcRenderer.invoke(channels.paySupplier, input),
+    reversePayment: (input) => ipcRenderer.invoke(channels.reverseSupplierPayment, input),
     adjust: (input) => ipcRenderer.invoke(channels.adjustSupplier, input),
     statement: (input) => ipcRenderer.invoke(channels.supplierStatement, input),
     reconcile: () => ipcRenderer.invoke(channels.supplierReconcile),
@@ -40,6 +41,8 @@ const api: DesktopApi = {
     create: (input) => ipcRenderer.invoke(channels.createCustomer, input),
     update: (input) => ipcRenderer.invoke(channels.updateCustomer, input),
     receive: (input) => ipcRenderer.invoke(channels.receiveCustomer, input),
+    reverseReceipt: (input) => ipcRenderer.invoke(channels.reverseCustomerReceipt, input),
+    paymentAccounts: () => ipcRenderer.invoke(channels.customerPaymentAccounts),
     statement: (input) => ipcRenderer.invoke(channels.customerStatement, input),
   },
   invoices: {
