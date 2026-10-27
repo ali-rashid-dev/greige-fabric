@@ -159,16 +159,23 @@ export class CustomerService {
   }
 
   update(input: UpdateCustomerInput): Customer {
-    const result = this.database.prepare(`
-      UPDATE customers SET code = ?, name = ?, phone = ?, address = ?,
-        credit_limit_minor = ?, payment_terms_days = ?, updated_at = ?
-      WHERE id = ?
-    `).run(
-      input.code, input.name, input.phone, input.address,
-      Math.round(input.creditLimit * 100), input.paymentTermsDays,
-      new Date().toISOString(), input.id,
-    );
-    if (result.changes === 0) throw new FabricServiceError("NOT_FOUND", "Customer not found.");
+    try {
+      const result = this.database.prepare(`
+        UPDATE customers SET code = ?, name = ?, phone = ?, address = ?,
+          credit_limit_minor = ?, payment_terms_days = ?, updated_at = ?
+        WHERE id = ?
+      `).run(
+        input.code, input.name, input.phone, input.address,
+        Math.round(input.creditLimit * 100), input.paymentTermsDays,
+        new Date().toISOString(), input.id,
+      );
+      if (result.changes === 0) throw new FabricServiceError("NOT_FOUND", "Customer not found.");
+    } catch (error) {
+      if (this.isUniqueViolation(error)) {
+        throw new FabricServiceError("CONFLICT", "That customer code is already in use.");
+      }
+      throw error;
+    }
     return this.getCustomer(input.id);
   }
 

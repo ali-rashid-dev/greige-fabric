@@ -1238,6 +1238,19 @@ td {
   margin-bottom: 12px;
 }
 
+.statement-print-heading {
+  display: grid;
+  gap: 5px;
+  margin: 0 0 12px;
+  color: #58675c;
+  font-size: 10px;
+}
+
+.statement-print-heading span {
+  color: #89948c;
+  font-size: 9px;
+}
+
 .section-heading.compact {
   margin: 0 0 8px;
 }
@@ -1339,6 +1352,11 @@ td {
 
   body.print-customer-statement .statement-balances {
     padding: 8px 0;
+  }
+
+  body.print-customer-statement .statement-print-heading {
+    margin-bottom: 10px;
+    color: #26302b;
   }
 }
 

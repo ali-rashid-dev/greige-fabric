@@ -405,6 +405,25 @@ describe("fabric quality catalog", () => {
         creditLimit: customerInput.creditLimit,
         paymentTermsDays: customerInput.paymentTermsDays,
       }, "Owner");
+      const otherCustomer = customers.create({
+        code: "CUS-002",
+        name: "Second Buyer",
+        phone: "",
+        address: "",
+        openingBalance: 0,
+        creditLimit: 0,
+        paymentTermsDays: 0,
+      }, "System");
+      expect(() => customers.update({
+        id: customer.id,
+        code: otherCustomer.code,
+        name: customer.name,
+        phone: customer.phone,
+        address: customer.address,
+        creditLimit: customerInput.creditLimit,
+        paymentTermsDays: customerInput.paymentTermsDays,
+      })).toThrowError(new FabricServiceError("CONFLICT", "That customer code is already in use."));
+      expect(customers.get(customer.id).customer.code).toBe("CUS-001");
 
       const invoice = service.createInvoice(createInvoiceSchema.parse({
         customerId: customer.id,

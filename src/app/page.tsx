@@ -69,6 +69,14 @@ function formatDate(value: string): string {
   }).format(new Date(value));
 }
 
+function getLocalDateInputValue(): string {
+  const date = new Date();
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
 function toFormValues(fabric: Fabric): FabricFormValues {
   return {
     sku: fabric.sku,
@@ -135,7 +143,7 @@ export default function Home() {
   const [purchaseValues, setPurchaseValues] = useState({
     billNumber: "",
     reference: "",
-    purchaseDate: new Date().toISOString().slice(0, 10),
+    purchaseDate: getLocalDateInputValue(),
     additionalCosts: "",
     additionalCostsDescription: "",
     paymentMode: "credit" as "credit" | "cash" | "bank",
@@ -246,7 +254,7 @@ export default function Home() {
       getDesktopApi().inventory.movements(),
       getDesktopApi().suppliers.list({ query: supplierSearch, includeInactive: true }),
       getDesktopApi().suppliers.reconcile(),
-      getDesktopApi().customers.list({ query: customerSearch, includeInactive: true }),
+      getDesktopApi().customers.list({ query: "", includeInactive: true }),
     ]);
     if (!reportResult.ok) throw new Error(reportResult.error.message);
     if (!movementResult.ok) throw new Error(movementResult.error.message);
@@ -271,7 +279,17 @@ export default function Home() {
     void refreshManagement().catch((loadError: unknown) => {
       setError(loadError instanceof Error ? loadError.message : "Unable to load inventory and supplier information.");
     });
-  }, [supplierSearch, customerSearch]);
+  }, [supplierSearch]);
+
+  const visibleCustomers = useMemo(() => {
+    const query = customerSearch.trim().toLocaleLowerCase();
+    if (!query) return customers;
+    return customers.filter((customer) =>
+      [customer.code, customer.name, customer.phone].some((value) =>
+        value.toLocaleLowerCase().includes(query),
+      ),
+    );
+  }, [customers, customerSearch]);
 
   function openCreateForm() {
     setEditing(null);
@@ -370,16 +388,20 @@ export default function Home() {
     if (!details) return;
     setSaving(true);
     setError("");
+    const customerId = saleCustomerId;
     try {
       const result = await getDesktopApi().invoices.create({
-        ...(saleCustomerId ? { customerId: saleCustomerId } : {}),
+        ...(customerId ? { customerId } : {}),
         items: [{
           fabricId: details.fabric.id,
           quantityMeters: Number(saleQuantity),
         }],
       });
       if (!result.ok) throw new Error(result.error.message);
-      await refreshCatalog();
+      await Promise.all([
+        refreshCatalog(),
+        ...(customerId ? [refreshManagement()] : []),
+      ]);
       await openDetails(details.fabric);
       setNotice(`Invoice ${result.data.invoiceNumber} recorded.`);
       setSaleCustomerId("");
@@ -670,7 +692,7 @@ export default function Home() {
       setPurchaseValues({
         billNumber: "",
         reference: "",
-        purchaseDate: new Date().toISOString().slice(0, 10),
+        purchaseDate: getLocalDateInputValue(),
         additionalCosts: "",
         additionalCostsDescription: "",
         paymentMode: "credit",
@@ -965,7 +987,10 @@ export default function Home() {
                 }}
                 statement={customerStatement}
                 statementDates={customerStatementDates}
-                onStatementDatesChange={setCustomerStatementDates}
+                onStatementDatesChange={(dates) => {
+                  setCustomerStatementDates(dates);
+                  setCustomerStatement(null);
+                }}
                 onStatementSubmit={(event) => void loadCustomerStatement(event)}
                 onPrintStatement={() => {
                   document.body.classList.add("print-customer-statement");
@@ -989,7 +1014,7 @@ export default function Home() {
                     </label>
                     <span className="history-count">{customers.length} customers</span>
                   </div>
-                  <CustomerTable customers={customers} onOpen={(customer) => void openCustomer(customer)} />
+                  <CustomerTable customers={visibleCustomers} onOpen={(customer) => void openCustomer(customer)} />
                 </div>
               </>
             )
@@ -1212,7 +1237,7 @@ export default function Home() {
               setPurchaseValues({
                 billNumber: "",
                 reference: "",
-                purchaseDate: new Date().toISOString().slice(0, 10),
+                purchaseDate: getLocalDateInputValue(),
                 additionalCosts: "",
                 additionalCostsDescription: "",
                 paymentMode: "credit",
@@ -1519,8 +1544,12 @@ function CustomerDetailPage({
       {tab === "ledger" && (
         <div className="customer-statement-print">
           <div className="section-heading"><div><h2>Customer ledger statement</h2><p>Opening and closing balances are calculated from customer-linked AR postings.</p></div>
-            {statement && <button className="secondary-button" onClick={onPrintStatement}>Print statement</button>}
+            <button className="secondary-button" disabled={!statement} onClick={onPrintStatement}>Print statement</button>
           </div>
+          {statement && <div className="statement-print-heading">
+            <strong>{customer.name} ({customer.code})</strong>
+            <span>Statement period: {statement.from} to {statement.to}</span>
+          </div>}
           <form className="statement-filter" onSubmit={(event) => onStatementSubmit(event)}>
             <FormField label="From"><input type="date" required value={statementDates.from} onChange={(event) => onStatementDatesChange({ ...statementDates, from: event.target.value })} /></FormField>
             <FormField label="To"><input type="date" required value={statementDates.to} onChange={(event) => onStatementDatesChange({ ...statementDates, to: event.target.value })} /></FormField>
