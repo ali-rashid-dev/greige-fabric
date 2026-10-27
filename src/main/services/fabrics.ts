@@ -176,8 +176,7 @@ export class FabricService {
       SELECT DISTINCT i.id, i.invoice_number, i.total_minor, i.discount_minor,
              i.amount_received_minor, i.payment_account_code, i.created_at,
              i.customer_id, c.code AS customer_code, c.name AS customer_name,
-             c.phone AS customer_phone, c.address AS customer_address,
-             c.payment_terms_days
+             i.customer_phone, i.customer_address, i.payment_terms_days
       FROM invoices i
       JOIN invoice_items item ON item.invoice_id = i.id
       LEFT JOIN customers c ON c.id = i.customer_id
@@ -358,11 +357,14 @@ export class FabricService {
       this.database.prepare(`
         INSERT INTO invoices (
           id, invoice_number, total_minor, created_at, customer_id,
-          discount_minor, amount_received_minor, payment_account_code
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+          discount_minor, amount_received_minor, payment_account_code,
+          customer_phone, customer_address, payment_terms_days
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
         id, invoiceNumber, totalMinor, createdAt, invoiceCustomer?.id ?? null,
         discountMinor, amountReceivedMinor, paymentAccountCode,
+        invoiceCustomer?.phone ?? null, invoiceCustomer?.address ?? null,
+        invoiceCustomer?.payment_terms_days ?? null,
       );
       for (const line of lines) {
         const itemId = randomUUID();
@@ -434,8 +436,7 @@ export class FabricService {
       SELECT i.id, i.invoice_number, i.total_minor, i.discount_minor,
              i.amount_received_minor, i.payment_account_code, i.created_at,
              i.customer_id, c.code AS customer_code, c.name AS customer_name,
-             c.phone AS customer_phone, c.address AS customer_address,
-             c.payment_terms_days
+             i.customer_phone, i.customer_address, i.payment_terms_days
       FROM invoices i LEFT JOIN customers c ON c.id = i.customer_id
       ORDER BY i.created_at DESC
     `).all() as InvoiceRow[];

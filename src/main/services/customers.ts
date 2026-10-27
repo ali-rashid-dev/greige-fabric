@@ -215,8 +215,7 @@ export class CustomerService {
       SELECT i.id, i.invoice_number, i.total_minor, i.discount_minor,
              i.amount_received_minor, i.payment_account_code, i.created_at,
              i.customer_id, c.code AS customer_code, c.name AS customer_name,
-             c.phone AS customer_phone, c.address AS customer_address,
-             c.payment_terms_days
+             i.customer_phone, i.customer_address, i.payment_terms_days
       FROM invoices i JOIN customers c ON c.id = i.customer_id
       WHERE i.customer_id = ? ORDER BY i.created_at DESC
     `).all(id) as InvoiceRow[];

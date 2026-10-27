@@ -2547,17 +2547,31 @@ td {
     font-size: 10px;
   }
 
-  .app-shell:has(.statement-printable) > .sidebar,
-  .app-shell:has(.statement-printable) > .main-content > .topbar,
-  .app-shell:has(.statement-printable) .modal-backdrop:not(:has(.statement-printable)),
-  .app-shell:has(.statement-printable) .modal-header,
-  .app-shell:has(.statement-printable) .modal-content > :not(.supplier-statement-print),
-  .app-shell:has(.statement-printable) .supplier-statement-print > .section-heading {
+  body.print-supplier-statement .app-shell:has(.statement-printable) > .sidebar,
+  body.print-supplier-statement .app-shell:has(.statement-printable) > .main-content,
+  body.print-supplier-statement .app-shell:has(.statement-printable) .modal-backdrop:not(:has(.statement-printable)),
+  body.print-supplier-statement .app-shell:has(.statement-printable) .modal-header,
+  body.print-supplier-statement .app-shell:has(.statement-printable) .modal-content > :not(.supplier-statement-print),
+  body.print-supplier-statement .app-shell:has(.statement-printable) .supplier-statement-print > .section-heading {
     display: none !important;
   }
 
-  .app-shell:has(.statement-printable) .modal,
-  .app-shell:has(.statement-printable) .modal-content {
+  body.print-supplier-statement .app-shell:has(.statement-printable) {
+    display: block;
+    min-height: 0;
+    background: white;
+  }
+
+  body.print-supplier-statement .app-shell:has(.statement-printable) > .modal-backdrop {
+    position: static;
+    display: block;
+    overflow: visible;
+    padding: 0;
+    background: white;
+  }
+
+  body.print-supplier-statement .app-shell:has(.statement-printable) .modal,
+  body.print-supplier-statement .app-shell:has(.statement-printable) .modal-content {
     width: 100%;
     max-width: none;
     max-height: none;

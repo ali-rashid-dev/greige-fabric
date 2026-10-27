@@ -60,6 +60,7 @@ export default function ExpensesManagement() {
   const [accountLedger, setAccountLedger] = useState<GeneralLedger | null>(null);
   const [ledgerAccounts, setLedgerAccounts] = useState<ChartOfAccount[]>([]);
   const [ledgerAccountCode, setLedgerAccountCode] = useState("1000");
+  const [ledgerRefresh, setLedgerRefresh] = useState(0);
   const [periods, setPeriods] = useState<AccountingPeriod[]>([]);
   const [expenseDate, setExpenseDate] = useState(today);
   const [range, setRange] = useState({ from: today, to: today });
@@ -78,7 +79,7 @@ export default function ExpensesManagement() {
 
   const loadData = useCallback(async () => {
     const [categoryResult, accountResult, expenseResult, reportResult, cashResult, bankResult, periodResult,
-      ledgerAccountsResult, ledgerResult] =
+      ledgerAccountsResult] =
       await Promise.all([
         getDesktopApi().expenses.categories(),
         getDesktopApi().customers.paymentAccounts(),
@@ -88,11 +89,6 @@ export default function ExpensesManagement() {
         getDesktopApi().accounting.generalLedger({ accountCode: "1010", from: range.from, to: range.to }),
         getDesktopApi().accounting.periods(),
         getDesktopApi().accounting.accounts(),
-        getDesktopApi().accounting.generalLedger({
-          accountCode: ledgerAccountCode,
-          from: range.from,
-          to: range.to,
-        }),
       ]);
     const categoryData = resultData(categoryResult);
     const accountData = resultData(accountResult);
@@ -105,13 +101,12 @@ export default function ExpensesManagement() {
     setPeriods(resultData(periodResult));
     const chartOfAccounts = resultData(ledgerAccountsResult);
     setLedgerAccounts(chartOfAccounts);
-    setAccountLedger(resultData(ledgerResult));
     setLedgerAccountCode((current) =>
       chartOfAccounts.some((account) => account.code === current) ? current : chartOfAccounts[0]?.code ?? "",
     );
     setCategoryCode((current) => current || categoryData[0]?.code || "");
     setPaymentAccountCode((current) => current || accountData[0]?.code || "");
-  }, [range, ledgerAccountCode]);
+  }, [range]);
 
   useEffect(() => {
     let active = true;
@@ -131,6 +126,23 @@ export default function ExpensesManagement() {
     };
   }, [loadData]);
 
+  useEffect(() => {
+    let active = true;
+    setAccountLedger(null);
+    void getDesktopApi().accounting.generalLedger({
+      accountCode: ledgerAccountCode,
+      from: range.from,
+      to: range.to,
+    }).then((result) => {
+      if (active) setAccountLedger(resultData(result));
+    }).catch((loadError: unknown) => {
+      if (active) setError(loadError instanceof Error ? loadError.message : "Unable to load account ledger.");
+    });
+    return () => {
+      active = false;
+    };
+  }, [ledgerAccountCode, range.from, range.to, ledgerRefresh]);
+
   const selectedPeriod = useMemo(
     () => periods.find((period) => period.startsOn <= expenseDate && period.endsOn >= expenseDate),
     [periods, expenseDate],
@@ -149,6 +161,7 @@ export default function ExpensesManagement() {
         description,
       });
       if (!result.ok) throw new Error(result.error.message);
+      setLedgerRefresh((current) => current + 1);
       await loadData();
       setAmount("");
       setDescription("");
@@ -226,11 +239,15 @@ export default function ExpensesManagement() {
           {view === "daily" ? (
             <label>Date <input type="date" value={dailyDate} onChange={(event) => setDailyDate(event.target.value)} /></label>
           ) : view === "ledger" ? (
-            <label>Account
-              <select value={ledgerAccountCode} onChange={(event) => setLedgerAccountCode(event.target.value)}>
-                {ledgerAccounts.map((account) => <option key={account.code} value={account.code}>{account.code} · {account.name}</option>)}
-              </select>
-            </label>
+            <>
+              <label>From <input type="date" value={rangeInput.from} onChange={(event) => setRangeInput({ ...rangeInput, from: event.target.value })} /></label>
+              <label>To <input type="date" value={rangeInput.to} onChange={(event) => setRangeInput({ ...rangeInput, to: event.target.value })} /></label>
+              <label>Account
+                <select value={ledgerAccountCode} onChange={(event) => setLedgerAccountCode(event.target.value)}>
+                  {ledgerAccounts.map((account) => <option key={account.code} value={account.code}>{account.code} · {account.name}</option>)}
+                </select>
+              </label>
+            </>
           ) : (
             <>
               <label>From <input type="date" value={rangeInput.from} onChange={(event) => setRangeInput({ ...rangeInput, from: event.target.value })} /></label>
@@ -301,7 +318,7 @@ export default function ExpensesManagement() {
             <span>{range.from} – {range.to}</span>
           </div>
           <header className="panel-heading"><div><h2>{view === "cashbook" ? "Cashbook" : view === "bankbook" ? "Bankbook" : "Account ledger"}</h2><p>{displayedLedger.account.code} · {displayedLedger.account.name} · opening balance {formatMoney(displayedLedger.openingBalanceMinor)}</p></div><PrintActions label="Print ledger" /></header>
-          <div className="summary-grid"><SummaryCard label="Money in" value={formatMoney(displayedLedger.lines.reduce((sum, line) => sum + line.debitMinor, 0))} /><SummaryCard label="Money out" value={formatMoney(displayedLedger.lines.reduce((sum, line) => sum + line.creditMinor, 0))} /><SummaryCard label="Closing balance" value={formatMoney(displayedLedger.closingBalanceMinor)} /></div>
+          <div className="summary-grid"><SummaryCard label={view === "ledger" ? "Debits" : "Money in"} value={formatMoney(displayedLedger.lines.reduce((sum, line) => sum + line.debitMinor, 0))} /><SummaryCard label={view === "ledger" ? "Credits" : "Money out"} value={formatMoney(displayedLedger.lines.reduce((sum, line) => sum + line.creditMinor, 0))} /><SummaryCard label="Closing balance" value={formatMoney(displayedLedger.closingBalanceMinor)} /></div>
           <div className="table-scroll"><table><thead><tr><th>Date</th><th>Type</th><th>Reference</th><th className="numeric">In</th><th className="numeric">Out</th><th className="numeric">Balance</th></tr></thead>
             <tbody>{displayedLedger.lines.map((line, index) => <tr key={`${line.transactionId}-${index}`}><td>{formatDate(line.createdAt.slice(0, 10))}</td><td>{line.transactionType.replaceAll("_", " ")}</td><td>{line.reference}</td><td className="numeric">{line.debitMinor ? formatMoney(line.debitMinor) : "—"}</td><td className="numeric">{line.creditMinor ? formatMoney(line.creditMinor) : "—"}</td><td className="numeric">{formatMoney(line.balanceMinor)}</td></tr>)}</tbody>
           </table>{!loading && displayedLedger.lines.length === 0 && <p className="empty-state">No postings in this date range.</p>}</div>

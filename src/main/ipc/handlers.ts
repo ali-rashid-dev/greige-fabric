@@ -15,6 +15,7 @@ import {
   expenseCategoryInputSchema,
   expenseInputSchema,
   expenseRangeSchema,
+  analyticsReportSchema,
   printDocumentSchema,
   customerInputSchema,
   customerListSchema,
@@ -50,6 +51,7 @@ import { FabricService } from "../services/fabrics";
 import { CustomerService } from "../services/customers";
 import { AccountingService } from "../services/accounting";
 import { ExpenseService } from "../services/expenses";
+import { ReportsService } from "../services/reports";
 import { isTrustedSender } from "./security";
 
 function failure<T>(code: IpcErrorCode, message: string): IpcResult<T> {
@@ -99,9 +101,21 @@ export function registerIpcHandlers(
   customers: CustomerService,
   accounting: AccountingService,
   expenses: ExpenseService,
+  reports: ReportsService,
   developmentUrl: string | undefined,
   productionFileUrl: string,
 ): void {
+  registerHandler(
+    channels.runAnalyticsReport, reports, developmentUrl, productionFileUrl,
+    analyticsReportSchema, async (service, input) => {
+      const { ownerPin, ...reportInput } = input;
+      if (!await ownerAuth.verifyPin(ownerPin)) {
+        throw new FabricServiceError("AUTHORIZATION", "The owner PIN is incorrect.");
+      }
+      return service.run(reportInput);
+    },
+  );
+
   ipcMain.handle(channels.printDocument, async (event, rawInput): Promise<IpcResult<{ printed: boolean }>> => {
     const frame = event.senderFrame;
     if (

@@ -1,4 +1,5 @@
 export const channels = {
+  runAnalyticsReport: "reports:run",
   listFabrics: "fabrics:list",
   getFabric: "fabrics:get",
   createFabric: "fabrics:create",

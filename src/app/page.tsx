@@ -8,6 +8,7 @@ import { fabricInputSchema } from "@/shared/contracts";
 import PrintActions from "./print-actions";
 import SalesPos from "./sales-pos";
 import ExpensesManagement from "./expenses-management";
+import ReportsManagement from "./reports-management";
 import type {
   Fabric,
   FabricDetails,
@@ -27,7 +28,7 @@ import type {
   SupplierStatement,
 } from "@/shared/types";
 
-type Section = "pos" | "fabrics" | "stock" | "suppliers" | "customers" | "invoices" | "expenses";
+type Section = "pos" | "fabrics" | "stock" | "suppliers" | "customers" | "invoices" | "expenses" | "reports";
 type StatusFilter = "active" | "all" | "inactive" | "low-stock";
 type InventoryView = "overview" | "movements" | "low-stock" | "valuation";
 type CustomerTab = "overview" | "sales" | "payments" | "ledger";
@@ -900,7 +901,9 @@ export default function Home() {
           ? customerDetails?.customer.name ?? "Customers"
           : section === "expenses"
             ? "Expenses & cashbook"
-            : "Sales history";
+            : section === "reports"
+              ? "Reports & analytics"
+              : "Sales history";
 
   return (
     <main className="app-shell">
@@ -934,6 +937,9 @@ export default function Home() {
           </button>
           <button className={section === "expenses" ? "nav-item active" : "nav-item"} onClick={() => setSection("expenses")}>
             <span className="nav-icon">₨</span> Expenses & cashbook
+          </button>
+          <button className={section === "reports" ? "nav-item active" : "nav-item"} onClick={() => setSection("reports")}>
+            <span className="nav-icon">▤</span> Reports & analytics
           </button>
         </nav>
         <div className="sidebar-bottom">
@@ -992,6 +998,7 @@ export default function Home() {
 
           {section === "pos" && <SalesPos customers={customers} onPosted={handleSalePosted} />}
           {section === "expenses" && <ExpensesManagement />}
+          {section === "reports" && <ReportsManagement />}
 
           {section === "fabrics" && (
             <>

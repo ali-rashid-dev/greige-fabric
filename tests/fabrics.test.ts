@@ -9,6 +9,7 @@ import { SupplierService } from "../src/main/services/suppliers";
 import { CustomerService } from "../src/main/services/customers";
 import { AccountingService } from "../src/main/services/accounting";
 import { ExpenseService } from "../src/main/services/expenses";
+import { ReportsService } from "../src/main/services/reports";
 import {
   fabricInputSchema,
   stockAdjustmentSchema,
@@ -36,6 +37,7 @@ async function createService(): Promise<{
   customers: CustomerService;
   accounting: AccountingService;
   expenses: ExpenseService;
+  reports: ReportsService;
   close: () => void;
 }> {
   const directory = await mkdtemp(path.join(os.tmpdir(), "greige-fabrics-"));
@@ -49,6 +51,7 @@ async function createService(): Promise<{
     customers: new CustomerService(database),
     accounting: new AccountingService(database),
     expenses: new ExpenseService(database),
+    reports: new ReportsService(database),
     close: () => database.close(),
   };
 }
@@ -416,6 +419,168 @@ describe("fabric quality catalog", () => {
       expect(expenses.list({ from: "2026-10-27", to: "2026-10-27" })).toHaveLength(savedCount);
       expect(accounting.trialBalance("2026-10-27").isBalanced).toBe(true);
     } finally {
+      close();
+    }
+  });
+
+  it("reconciles analytics stock and customer balances to control accounts", async () => {
+    const { service, inventory, customers, suppliers, reports, close } = await createService();
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-10-27T12:00:00.000Z"));
+    try {
+      const fabric = service.create(fabricInputSchema.parse(sampleFabric));
+      inventory.openStock({
+        fabricId: fabric.id,
+        quantityMeters: 5,
+        unitCost: 100,
+        reference: "REPORT-OPENING-STOCK",
+        reason: "Analytics report test",
+      }, "Owner");
+      const customer = customers.create({
+        code: "CUS-REPORT",
+        name: "Analytics Customer",
+        phone: "",
+        address: "",
+        openingBalance: 0,
+        creditLimit: 1000,
+        paymentTermsDays: 0,
+      }, "System");
+      const supplier = suppliers.create({
+        code: "SUP-REPORT",
+        name: "Analytics Supplier",
+        phone: "03000000000",
+        address: "",
+        contactName: "",
+        email: "",
+        openingBalance: 0,
+      }, "System");
+      suppliers.receive(supplierPurchaseSchema.parse({
+        supplierId: supplier.id,
+        billNumber: "REPORT-PURCHASE-1",
+        purchaseDate: "2026-10-27",
+        additionalCosts: 0,
+        paymentMode: "credit",
+        amountPaid: 0,
+        items: [{ fabricId: fabric.id, quantityMeters: 1, unitCost: 100 }],
+      }));
+      const invoice = service.createInvoice(createInvoiceSchema.parse({
+        customerId: customer.id,
+        items: [{ fabricId: fabric.id, quantityMeters: 2, unitRate: 200 }],
+        discount: 5,
+        receivedAmount: 100,
+      }));
+
+      const dailySales = reports.run({
+        reportType: "daily_sales",
+        from: "2026-10-27",
+        to: "2026-10-27",
+        search: invoice.invoiceNumber,
+        page: 1,
+        pageSize: 1,
+      });
+      expect(dailySales).toMatchObject({
+        totalRows: 1,
+        totals: { grossSalesMinor: 40_000, returnsMinor: 0, netSalesMinor: 39_500 },
+      });
+      expect(dailySales.rows[0]).toMatchObject({
+        invoice: invoice.invoiceNumber,
+        gross_minor: 40_000,
+        discount_minor: 500,
+        net_minor: 39_500,
+      });
+
+      const stock = reports.run({
+        reportType: "stock_summary",
+        from: "2026-10-27",
+        to: "2026-10-27",
+        search: "",
+        page: 1,
+        pageSize: 25,
+      });
+      expect(stock.reconciliations[0]).toMatchObject({ isBalanced: true, differenceMinor: 0 });
+      const customerBalances = reports.run({
+        reportType: "customer_balances",
+        from: "2026-10-27",
+        to: "2026-10-27",
+        search: "",
+        page: 1,
+        pageSize: 25,
+      });
+      expect(customerBalances.reconciliations[0]).toMatchObject({ isBalanced: true, differenceMinor: 0 });
+      expect(customerBalances.rows.find((row) => row.code === customer.code)?.balance_minor)
+        .toBe(invoice.dueMinor);
+      const supplierBalances = reports.run({
+        reportType: "supplier_balances",
+        from: "2026-10-27",
+        to: "2026-10-27",
+        search: supplier.code,
+        page: 1,
+        pageSize: 25,
+      });
+      expect(supplierBalances.reconciliations[0]).toMatchObject({ isBalanced: true, differenceMinor: 0 });
+      expect(supplierBalances.rows[0].balance_minor).toBe(10_000);
+      expect(reports.run({
+        reportType: "purchases",
+        from: "2026-10-27",
+        to: "2026-10-27",
+        search: "REPORT-PURCHASE-1",
+        page: 1,
+        pageSize: 25,
+      }).totals).toMatchObject({ quantityMeters: 1, purchaseCostMinor: 10_000 });
+      expect(reports.run({
+        reportType: "gross_profit",
+        from: "2026-10-27",
+        to: "2026-10-27",
+        search: "",
+        page: 1,
+        pageSize: 25,
+      }).totals).toMatchObject({ revenueMinor: 39_500, costOfGoodsSoldMinor: 20_000, grossProfitMinor: 19_500 });
+      expect(reports.run({
+        reportType: "profit_loss",
+        from: "2026-10-27",
+        to: "2026-10-27",
+        search: "",
+        page: 1,
+        pageSize: 25,
+      }).totals.netProfitMinor).toBe(19_500);
+      expect(reports.run({
+        reportType: "cashbook",
+        from: "2026-10-27",
+        to: "2026-10-27",
+        search: "",
+        page: 1,
+        pageSize: 25,
+      }).columns.map((column) => column.key)).toContain("balance_minor");
+      expect(reports.run({
+        reportType: "general_ledger",
+        from: "2026-10-27",
+        to: "2026-10-27",
+        search: "",
+        accountCode: "1200",
+        page: 1,
+        pageSize: 25,
+      }).rows.length).toBeGreaterThan(0);
+      const trialBalance = reports.run({
+        reportType: "trial_balance",
+        from: "2026-10-27",
+        to: "2026-10-27",
+        search: "",
+        page: 1,
+        pageSize: 25,
+      });
+      expect(trialBalance.totals.debitMinor).toBe(trialBalance.totals.creditMinor);
+      const paged = reports.run({
+        reportType: "daily_sales",
+        from: "2026-10-27",
+        to: "2026-10-27",
+        search: "",
+        page: 2,
+        pageSize: 1,
+      });
+      expect(paged.rows).toHaveLength(0);
+      expect(paged.totalRows).toBe(1);
+    } finally {
+      vi.useRealTimers();
       close();
     }
   });
@@ -868,6 +1033,8 @@ describe("fabric quality catalog", () => {
       const customerInput = customerInputSchema.parse({
         code: "CUS-POS",
         name: "POS Wholesale Buyer",
+        phone: "0300-1112233",
+        address: "10 Market Road",
         openingBalance: 0,
         creditLimit: 1000,
         paymentTermsDays: 30,
@@ -889,6 +1056,11 @@ describe("fabric quality catalog", () => {
         receivedAmount: 400,
         paymentAccount: "cash",
       }));
+      expect(invoice).toMatchObject({
+        customerPhone: "0300-1112233",
+        customerAddress: "10 Market Road",
+        paymentTermsDays: 30,
+      });
       expect(invoice).toMatchObject({
         subtotalMinor: 110_000,
         discountMinor: 10_000,
@@ -929,6 +1101,27 @@ describe("fabric quality catalog", () => {
         discountMinor: 10_000,
         amountReceivedMinor: 40_000,
         dueMinor: 60_000,
+        customerPhone: "0300-1112233",
+        customerAddress: "10 Market Road",
+        paymentTermsDays: 30,
+      });
+      database.prepare(`
+        UPDATE customers SET phone = ?, address = ?, payment_terms_days = ? WHERE id = ?
+      `).run("0300-9998877", "Updated address", 90, customer.id);
+      expect(service.listInvoices()[0]).toMatchObject({
+        customerPhone: "0300-1112233",
+        customerAddress: "10 Market Road",
+        paymentTermsDays: 30,
+      });
+      expect(service.get(fabric.id).invoices[0]).toMatchObject({
+        customerPhone: "0300-1112233",
+        customerAddress: "10 Market Road",
+        paymentTermsDays: 30,
+      });
+      expect(customers.get(customer.id).sales[0]).toMatchObject({
+        customerPhone: "0300-1112233",
+        customerAddress: "10 Market Road",
+        paymentTermsDays: 30,
       });
 
       const movementCount = inventory.movements().length;

@@ -17,6 +17,7 @@ import type {
   ExpenseCategoryInput,
   ExpenseInput,
   ExpenseRangeInput,
+  AnalyticsReportInput,
   PrintDocumentInput,
   FabricFiltersInput,
   FabricIdInput,
@@ -322,6 +323,45 @@ export interface ExpenseReport {
   totalMinor: number;
 }
 
+export type AnalyticsReportType =
+  | "daily_sales"
+  | "purchases"
+  | "stock_summary"
+  | "gross_profit"
+  | "profit_loss"
+  | "customer_balances"
+  | "supplier_balances"
+  | "trial_balance"
+  | "cashbook"
+  | "general_ledger";
+
+export interface AnalyticsReportColumn {
+  key: string;
+  label: string;
+  format: "text" | "number" | "money";
+}
+
+export interface AnalyticsReportReconciliation {
+  name: string;
+  expectedMinor: number;
+  actualMinor: number;
+  differenceMinor: number;
+  isBalanced: boolean;
+}
+
+export interface AnalyticsReport {
+  reportType: AnalyticsReportType;
+  from: string;
+  to: string;
+  page: number;
+  pageSize: number;
+  totalRows: number;
+  columns: AnalyticsReportColumn[];
+  rows: Array<Record<string, string | number>>;
+  totals: Record<string, number>;
+  reconciliations: AnalyticsReportReconciliation[];
+}
+
 export interface SupplierStatementLine {
   transactionType: string;
   reference: string;
@@ -406,6 +446,9 @@ export interface CustomerDetails {
 }
 
 export interface DesktopApi {
+  reports: {
+    run(input: AnalyticsReportInput): Promise<IpcResult<AnalyticsReport>>;
+  };
   documents: {
     print(input: PrintDocumentInput): Promise<IpcResult<{ printed: boolean }>>;
   };

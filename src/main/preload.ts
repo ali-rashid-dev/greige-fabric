@@ -3,6 +3,9 @@ import { channels } from "../shared/channels";
 import type { DesktopApi } from "../shared/types";
 
 const api: DesktopApi = {
+  reports: {
+    run: (input) => ipcRenderer.invoke(channels.runAnalyticsReport, input),
+  },
   documents: {
     print: (input) => ipcRenderer.invoke(channels.printDocument, input),
   },

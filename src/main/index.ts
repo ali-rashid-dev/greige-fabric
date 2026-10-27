@@ -10,6 +10,7 @@ import { OwnerAuthService } from "./services/owner-auth";
 import { CustomerService } from "./services/customers";
 import { AccountingService } from "./services/accounting";
 import { ExpenseService } from "./services/expenses";
+import { ReportsService } from "./services/reports";
 
 const developmentUrl = process.env.DESKTOP_DEV_URL;
 let mainWindow: BrowserWindow | null = null;
@@ -129,6 +130,7 @@ app.whenReady().then(async () => {
       new CustomerService(database),
       new AccountingService(database),
       new ExpenseService(database),
+      new ReportsService(database),
       developmentUrl,
       pathToFileURL(getRendererPath()).href,
     );

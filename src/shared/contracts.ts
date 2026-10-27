@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type {
+  AnalyticsReport,
   Fabric,
   FabricDetails,
   FabricFilters,
@@ -109,6 +110,23 @@ export const createInvoiceSchema = z.object({
 
 export const printDocumentSchema = z.object({
   paperFormat: z.enum(["A4", "A5", "Letter", "Legal"]),
+});
+
+export const analyticsReportSchema = z.object({
+  reportType: z.enum([
+    "daily_sales", "purchases", "stock_summary", "gross_profit", "profit_loss",
+    "customer_balances", "supplier_balances", "trial_balance", "cashbook", "general_ledger",
+  ]),
+  from: z.string().date(),
+  to: z.string().date(),
+  search: z.string().trim().max(200).default(""),
+  page: z.number().int().min(1).default(1),
+  pageSize: z.number().int().min(1).max(500).default(50),
+  accountCode: z.string().trim().min(1).max(40).optional(),
+  ownerPin: z.string().min(6).max(64).regex(/^\d+$/, "PIN must contain digits only"),
+}).refine(({ from, to }) => from <= to, {
+  path: ["to"],
+  message: "End date must be on or after start date.",
 });
 
 const supplierFields = {
@@ -441,6 +459,7 @@ export type StockAdjustmentInput = z.infer<typeof stockAdjustmentSchema>;
 export type OpeningStockInput = z.infer<typeof openingStockSchema>;
 export type CreateInvoiceInput = z.infer<typeof createInvoiceSchema>;
 export type PrintDocumentInput = z.infer<typeof printDocumentSchema>;
+export type AnalyticsReportInput = z.infer<typeof analyticsReportSchema>;
 export type SupplierInput = z.infer<typeof supplierInputSchema>;
 export type UpdateSupplierInput = z.infer<typeof updateSupplierSchema>;
 export type SupplierPurchaseInput = z.infer<typeof supplierPurchaseSchema>;
@@ -481,6 +500,7 @@ export type IpcResult<T> =
   | { ok: false; error: { code: IpcErrorCode; message: string } };
 
 export interface IpcContract {
+  "reports:run": { input: AnalyticsReportInput; output: AnalyticsReport };
   "fabrics:list": { input: FabricFilters; output: Fabric[] };
   "fabrics:get": { input: FabricIdInput; output: FabricDetails };
   "fabrics:create": { input: FabricInput; output: Fabric };
