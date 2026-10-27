@@ -2,6 +2,10 @@ import { ipcMain } from "electron";
 import { z } from "zod";
 import {
   createInvoiceSchema,
+  customerInputSchema,
+  customerListSchema,
+  customerReceiptSchema,
+  customerStatementSchema,
   fabricFiltersSchema,
   fabricIdSchema,
   fabricInputSchema,
@@ -17,6 +21,7 @@ import {
   supplierStatementSchema,
   updateFabricSchema,
   updateSupplierSchema,
+  updateCustomerSchema,
   type IpcErrorCode,
   type IpcResult,
 } from "../../shared/contracts";
@@ -26,6 +31,7 @@ import { OwnerAuthService } from "../services/owner-auth";
 import { InventoryService } from "../services/inventory";
 import { SupplierService } from "../services/suppliers";
 import { FabricService } from "../services/fabrics";
+import { CustomerService } from "../services/customers";
 import { isTrustedSender } from "./security";
 
 function failure<T>(code: IpcErrorCode, message: string): IpcResult<T> {
@@ -72,6 +78,7 @@ export function registerIpcHandlers(
   inventory: InventoryService,
   suppliers: SupplierService,
   ownerAuth: OwnerAuthService,
+  customers: CustomerService,
   developmentUrl: string | undefined,
   productionFileUrl: string,
 ): void {
@@ -196,5 +203,36 @@ export function registerIpcHandlers(
   registerHandler(
     channels.supplierReconcile, suppliers, developmentUrl, productionFileUrl,
     z.undefined(), (service) => service.reconcile(),
+  );
+  registerHandler(
+    channels.listCustomers, customers, developmentUrl, productionFileUrl,
+    customerListSchema, (service, input) => service.list(input),
+  );
+  registerHandler(
+    channels.getCustomer, customers, developmentUrl, productionFileUrl,
+    supplierIdSchema, (service, input) => service.get(input.id),
+  );
+  registerHandler(
+    channels.createCustomer, customers, developmentUrl, productionFileUrl,
+    customerInputSchema,
+    async (service, input) => {
+      const { ownerPin, ...customerInput } = input;
+      if (input.openingBalance > 0 && !await ownerAuth.verifyPin(ownerPin ?? "")) {
+        throw new FabricServiceError("AUTHORIZATION", "The owner PIN is incorrect.");
+      }
+      return service.create(customerInput, input.openingBalance > 0 ? "Owner" : "System");
+    },
+  );
+  registerHandler(
+    channels.updateCustomer, customers, developmentUrl, productionFileUrl,
+    updateCustomerSchema, (service, input) => service.update(input),
+  );
+  registerHandler(
+    channels.receiveCustomer, customers, developmentUrl, productionFileUrl,
+    customerReceiptSchema, (service, input) => service.receive(input),
+  );
+  registerHandler(
+    channels.customerStatement, customers, developmentUrl, productionFileUrl,
+    customerStatementSchema, (service, input) => service.statement(input),
   );
 }

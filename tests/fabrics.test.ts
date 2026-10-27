@@ -6,6 +6,7 @@ import { openDatabase } from "../src/main/database";
 import { FabricService, FabricServiceError } from "../src/main/services/fabrics";
 import { InventoryService } from "../src/main/services/inventory";
 import { SupplierService } from "../src/main/services/suppliers";
+import { CustomerService } from "../src/main/services/customers";
 import {
   fabricInputSchema,
   stockAdjustmentSchema,
@@ -13,6 +14,8 @@ import {
   supplierInputSchema,
   supplierPurchaseSchema,
   supplierPaymentSchema,
+  customerInputSchema,
+  customerReceiptSchema,
 } from "../src/shared/contracts";
 
 const migrationsDirectory = path.resolve("database/migrations");
@@ -23,6 +26,7 @@ async function createService(): Promise<{
   service: FabricService;
   inventory: InventoryService;
   suppliers: SupplierService;
+  customers: CustomerService;
   close: () => void;
 }> {
   const directory = await mkdtemp(path.join(os.tmpdir(), "greige-fabrics-"));
@@ -33,6 +37,7 @@ async function createService(): Promise<{
     service: new FabricService(database),
     inventory: new InventoryService(database),
     suppliers: new SupplierService(database),
+    customers: new CustomerService(database),
     close: () => database.close(),
   };
 }
@@ -364,6 +369,100 @@ describe("fabric quality catalog", () => {
       expect(paymentResult.purchases.find((purchase) => purchase.id === firstPurchase?.id)?.dueMinor).toBe(0);
       expect(paymentResult.supplier.outstandingMinor).toBe(5_015_000);
       expect(suppliers.reconcile().differenceMinor).toBe(0);
+    } finally {
+      close();
+    }
+  });
+
+  it("reconciles customer opening balance, credit sale, receipt and statement", async () => {
+    const { database, service, inventory, customers, close } = await createService();
+    try {
+      const fabric = service.create(fabricInputSchema.parse({ ...sampleFabric, sellingRate: 250 }));
+      inventory.openStock({
+        fabricId: fabric.id,
+        quantityMeters: 101,
+        unitCost: 145,
+        reference: "CUSTOMER-STOCK",
+        reason: "Customer sale test stock",
+      }, "Owner");
+
+      const customerInput = customerInputSchema.parse({
+        code: "CUS-001",
+        name: "Wholesale Buyer",
+        phone: "03000000000",
+        address: "Lahore",
+        openingBalance: 10_000,
+        creditLimit: 35_000,
+        paymentTermsDays: 30,
+        ownerPin: "123456",
+      });
+      const customer = customers.create({
+        code: customerInput.code,
+        name: customerInput.name,
+        phone: customerInput.phone,
+        address: customerInput.address,
+        openingBalance: customerInput.openingBalance,
+        creditLimit: customerInput.creditLimit,
+        paymentTermsDays: customerInput.paymentTermsDays,
+      }, "Owner");
+
+      const invoice = service.createInvoice(createInvoiceSchema.parse({
+        customerId: customer.id,
+        items: [{ fabricId: fabric.id, quantityMeters: 100 }],
+      }));
+      expect(invoice).toMatchObject({
+        customerId: customer.id,
+        totalMinor: 2_500_000,
+      });
+      expect(customers.get(customer.id).customer.outstandingMinor).toBe(3_500_000);
+
+      const invoiceCount = service.listInvoices().length;
+      const movementCount = inventory.movements().length;
+      expect(() => service.createInvoice(createInvoiceSchema.parse({
+        customerId: customer.id,
+        items: [{ fabricId: fabric.id, quantityMeters: 1 }],
+      }))).toThrowError(new FabricServiceError(
+        "CONFLICT",
+        "This sale would exceed the customer's credit limit.",
+      ));
+      expect(service.listInvoices()).toHaveLength(invoiceCount);
+      expect(inventory.movements()).toHaveLength(movementCount);
+
+      const receiptInput = customerReceiptSchema.parse({
+        customerId: customer.id,
+        amount: 15_000,
+        account: "bank",
+        reference: "Bank transfer",
+        note: "Part payment",
+      });
+      const receiptResult = customers.receive(receiptInput);
+      expect(receiptResult.customer.outstandingMinor).toBe(2_000_000);
+      expect(receiptResult.receipts[0]).toMatchObject({
+        account: "bank",
+        amountMinor: 1_500_000,
+        reference: "Bank transfer",
+      });
+      expect(receiptResult.sales[0]).toMatchObject({
+        customerId: customer.id,
+        customerCode: "CUS-001",
+        customerName: "Wholesale Buyer",
+      });
+
+      const statement = customers.statement({
+        customerId: customer.id,
+        from: "2020-01-01",
+        to: "2999-12-31",
+      });
+      expect(statement.openingBalanceMinor).toBe(0);
+      expect(statement.closingBalanceMinor).toBe(2_000_000);
+      expect(statement.lines.map((line) => [line.debitMinor, line.creditMinor]))
+        .toEqual([[1_000_000, 0], [2_500_000, 0], [0, 1_500_000]]);
+
+      const receivableControl = database.prepare(`
+        SELECT COALESCE(SUM(debit_minor - credit_minor), 0) AS balance
+        FROM ledger_postings WHERE account_code = '1300' AND customer_id = ?
+      `).get(customer.id) as { balance: number };
+      expect(receivableControl.balance).toBe(2_000_000);
     } finally {
       close();
     }

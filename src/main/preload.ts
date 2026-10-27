@@ -34,6 +34,14 @@ const api: DesktopApi = {
     statement: (input) => ipcRenderer.invoke(channels.supplierStatement, input),
     reconcile: () => ipcRenderer.invoke(channels.supplierReconcile),
   },
+  customers: {
+    list: (input) => ipcRenderer.invoke(channels.listCustomers, input ?? {}),
+    get: (input) => ipcRenderer.invoke(channels.getCustomer, input),
+    create: (input) => ipcRenderer.invoke(channels.createCustomer, input),
+    update: (input) => ipcRenderer.invoke(channels.updateCustomer, input),
+    receive: (input) => ipcRenderer.invoke(channels.receiveCustomer, input),
+    statement: (input) => ipcRenderer.invoke(channels.customerStatement, input),
+  },
   invoices: {
     list: () => ipcRenderer.invoke(channels.listInvoices),
     create: (input) => ipcRenderer.invoke(channels.createInvoice, input),

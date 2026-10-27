@@ -3,6 +3,9 @@ import type {
   Fabric,
   FabricDetails,
   FabricFilters,
+  Customer,
+  CustomerDetails,
+  CustomerStatement,
   Invoice,
   InventoryMovement,
   InventoryReport,
@@ -64,6 +67,7 @@ export const openingStockSchema = z.object({
 });
 
 export const createInvoiceSchema = z.object({
+  customerId: z.string().uuid().optional(),
   items: z.array(z.object({
     fabricId: z.string().uuid(),
     quantityMeters: z.number().finite().positive().max(1_000_000)
@@ -190,6 +194,60 @@ export const supplierListSchema = z.object({
   includeInactive: z.boolean().default(false),
 });
 
+const customerFields = {
+  code: z.string().trim().min(1, "Customer code is required").max(40)
+    .transform((value) => value.toUpperCase()),
+  name: z.string().trim().min(1, "Customer name is required").max(120),
+  phone: z.string().trim().max(40).default(""),
+  address: z.string().trim().max(240).default(""),
+  creditLimit: z.number().finite().nonnegative().max(1_000_000_000)
+    .refine((value) => hasPrecision(value, 100), "Use up to 2 decimal places"),
+  paymentTermsDays: z.number().int().min(0).max(3650),
+};
+
+export const customerInputSchema = z.object({
+  ...customerFields,
+  openingBalance: z.number().finite().nonnegative().max(1_000_000_000)
+    .refine((value) => hasPrecision(value, 100), "Use up to 2 decimal places"),
+  ownerPin: z.string().optional(),
+}).superRefine(({ openingBalance, ownerPin }, context) => {
+  if (openingBalance > 0 && !/^\d{6,64}$/.test(ownerPin ?? "")) {
+    context.addIssue({
+      code: "custom",
+      path: ["ownerPin"],
+      message: "A valid owner PIN is required to record an opening receivable.",
+    });
+  }
+});
+
+export const updateCustomerSchema = z.object({
+  ...customerFields,
+  id: z.string().uuid(),
+});
+
+export const customerListSchema = z.object({
+  query: z.string().trim().max(200).default(""),
+  includeInactive: z.boolean().default(false),
+});
+
+export const customerReceiptSchema = z.object({
+  customerId: z.string().uuid(),
+  amount: z.number().finite().positive().max(1_000_000_000)
+    .refine((value) => hasPrecision(value, 100), "Use up to 2 decimal places"),
+  account: z.enum(["cash", "bank"]),
+  reference: z.string().trim().max(100).default(""),
+  note: z.string().trim().max(160).default(""),
+});
+
+export const customerStatementSchema = z.object({
+  customerId: z.string().uuid(),
+  from: z.string().date(),
+  to: z.string().date(),
+}).refine(({ from, to }) => from <= to, {
+  path: ["to"],
+  message: "End date must be on or after start date.",
+});
+
 export const pinSchema = z.object({
   pin: z.string().min(6, "PIN must be at least 6 characters").max(64)
     .regex(/^\d+$/, "PIN must contain digits only"),
@@ -216,6 +274,11 @@ export type SupplierPaymentInput = z.infer<typeof supplierPaymentSchema>;
 export type SupplierAdjustmentInput = z.infer<typeof supplierAdjustmentSchema>;
 export type SupplierStatementInput = z.infer<typeof supplierStatementSchema>;
 export type SupplierListInput = z.input<typeof supplierListSchema>;
+export type CustomerInput = z.infer<typeof customerInputSchema>;
+export type UpdateCustomerInput = z.infer<typeof updateCustomerSchema>;
+export type CustomerListInput = z.input<typeof customerListSchema>;
+export type CustomerReceiptInput = z.infer<typeof customerReceiptSchema>;
+export type CustomerStatementInput = z.infer<typeof customerStatementSchema>;
 
 export type IpcErrorCode =
   | "VALIDATION"
@@ -242,6 +305,12 @@ export interface IpcContract {
   "inventory:opening": { input: OpeningStockInput; output: Fabric };
   "invoices:list": { input: undefined; output: Invoice[] };
   "invoices:create": { input: CreateInvoiceInput; output: Invoice };
+  "customers:list": { input: CustomerListInput; output: Customer[] };
+  "customers:get": { input: { id: string }; output: CustomerDetails };
+  "customers:create": { input: CustomerInput; output: Customer };
+  "customers:update": { input: UpdateCustomerInput; output: Customer };
+  "customers:receive": { input: CustomerReceiptInput; output: CustomerDetails };
+  "customers:statement": { input: CustomerStatementInput; output: CustomerStatement };
   "auth:pin-status": { input: undefined; output: { configured: boolean } };
   "auth:set-pin": { input: z.infer<typeof pinSetupSchema>; output: { configured: boolean } };
   "suppliers:list": { input: SupplierListInput; output: Supplier[] };

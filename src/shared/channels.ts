@@ -22,4 +22,10 @@ export const channels = {
   adjustSupplier: "suppliers:adjust",
   supplierStatement: "suppliers:statement",
   supplierReconcile: "suppliers:reconcile",
+  listCustomers: "customers:list",
+  getCustomer: "customers:get",
+  createCustomer: "customers:create",
+  updateCustomer: "customers:update",
+  receiveCustomer: "customers:receive",
+  customerStatement: "customers:statement",
 } as const;

@@ -1,6 +1,10 @@
 import type { IpcResult } from "./contracts";
 import type {
   CreateInvoiceInput,
+  CustomerInput,
+  CustomerListInput,
+  CustomerReceiptInput,
+  CustomerStatementInput,
   FabricFiltersInput,
   FabricIdInput,
   FabricInput,
@@ -12,6 +16,7 @@ import type {
   SupplierPurchaseInput,
   SupplierStatementInput,
   SupplierInput,
+  UpdateCustomerInput,
   UpdateFabricInput,
 } from "./contracts";
 
@@ -52,6 +57,9 @@ export interface Invoice {
   invoiceNumber: string;
   totalMinor: number;
   createdAt: string;
+  customerId?: string;
+  customerCode?: string;
+  customerName?: string;
   items: InvoiceItem[];
 }
 
@@ -174,6 +182,57 @@ export interface SupplierDetails {
   payments: SupplierPayment[];
 }
 
+export interface Customer {
+  id: string;
+  code: string;
+  name: string;
+  phone: string;
+  address: string;
+  creditLimitMinor: number;
+  paymentTermsDays: number;
+  active: boolean;
+  outstandingMinor: number;
+  salesCount: number;
+  receiptCount: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CustomerReceipt {
+  id: string;
+  receiptNumber: string;
+  account: "cash" | "bank";
+  amountMinor: number;
+  reference: string;
+  note: string;
+  createdAt: string;
+}
+
+export interface CustomerStatementLine {
+  transactionType: string;
+  reference: string;
+  createdAt: string;
+  debitMinor: number;
+  creditMinor: number;
+  balanceMinor: number;
+}
+
+export interface CustomerStatement {
+  customerId: string;
+  from: string;
+  to: string;
+  openingBalanceMinor: number;
+  closingBalanceMinor: number;
+  lines: CustomerStatementLine[];
+}
+
+export interface CustomerDetails {
+  customer: Customer;
+  sales: Invoice[];
+  receipts: CustomerReceipt[];
+  statement: CustomerStatement | null;
+}
+
 export interface DesktopApi {
   fabrics: {
     list(filters?: FabricFiltersInput): Promise<IpcResult<Fabric[]>>;
@@ -205,6 +264,14 @@ export interface DesktopApi {
     adjust(input: SupplierAdjustmentInput): Promise<IpcResult<SupplierDetails>>;
     statement(input: SupplierStatementInput): Promise<IpcResult<SupplierStatement>>;
     reconcile(): Promise<IpcResult<{ controlMinor: number; subledgerMinor: number; differenceMinor: number }>>;
+  };
+  customers: {
+    list(input?: CustomerListInput): Promise<IpcResult<Customer[]>>;
+    get(input: { id: string }): Promise<IpcResult<CustomerDetails>>;
+    create(input: CustomerInput): Promise<IpcResult<Customer>>;
+    update(input: UpdateCustomerInput): Promise<IpcResult<Customer>>;
+    receive(input: CustomerReceiptInput): Promise<IpcResult<CustomerDetails>>;
+    statement(input: CustomerStatementInput): Promise<IpcResult<CustomerStatement>>;
   };
   invoices: {
     list(): Promise<IpcResult<Invoice[]>>;

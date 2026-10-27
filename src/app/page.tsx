@@ -11,15 +11,19 @@ import type {
   InventoryMovement,
   InventoryReport,
   Invoice,
+  Customer,
+  CustomerDetails,
+  CustomerStatement,
   StockSummary,
   Supplier,
   SupplierDetails,
   SupplierStatement,
 } from "@/shared/types";
 
-type Section = "fabrics" | "stock" | "suppliers" | "invoices";
+type Section = "fabrics" | "stock" | "suppliers" | "customers" | "invoices";
 type StatusFilter = "active" | "all" | "inactive" | "low-stock";
 type InventoryView = "overview" | "movements" | "low-stock" | "valuation";
+type CustomerTab = "overview" | "sales" | "payments" | "ledger";
 
 interface FabricFormValues {
   sku: string;
@@ -163,6 +167,35 @@ export default function Home() {
   const [pinSetupOpen, setPinSetupOpen] = useState(false);
   const [pinSetupValues, setPinSetupValues] = useState({ pin: "", confirmation: "" });
   const [apReconciliation, setApReconciliation] = useState<{ controlMinor: number; subledgerMinor: number; differenceMinor: number } | null>(null);
+  const [customers, setCustomers] = useState<Customer[]>([]);
+  const [customerSearch, setCustomerSearch] = useState("");
+  const [customerDetails, setCustomerDetails] = useState<CustomerDetails | null>(null);
+  const [customerTab, setCustomerTab] = useState<CustomerTab>("overview");
+  const [customerFormOpen, setCustomerFormOpen] = useState(false);
+  const [customerEditing, setCustomerEditing] = useState<Customer | null>(null);
+  const [customerValues, setCustomerValues] = useState({
+    code: "",
+    name: "",
+    phone: "",
+    address: "",
+    openingBalance: "",
+    creditLimit: "",
+    paymentTermsDays: "0",
+    ownerPin: "",
+  });
+  const [receiptOpen, setReceiptOpen] = useState(false);
+  const [receiptValues, setReceiptValues] = useState({
+    amount: "",
+    account: "cash" as "cash" | "bank",
+    reference: "",
+    note: "",
+  });
+  const [customerStatement, setCustomerStatement] = useState<CustomerStatement | null>(null);
+  const [customerStatementDates, setCustomerStatementDates] = useState({
+    from: new Date().toISOString().slice(0, 10),
+    to: new Date().toISOString().slice(0, 10),
+  });
+  const [saleCustomerId, setSaleCustomerId] = useState("");
 
   const loadCatalog = useCallback(async () => {
     const [fabricResult, stockResult, invoiceResult] = await Promise.all([
@@ -208,20 +241,23 @@ export default function Home() {
   }
 
   async function refreshManagement() {
-    const [reportResult, movementResult, supplierResult, reconciliationResult] = await Promise.all([
+    const [reportResult, movementResult, supplierResult, reconciliationResult, customerResult] = await Promise.all([
       getDesktopApi().inventory.report(),
       getDesktopApi().inventory.movements(),
       getDesktopApi().suppliers.list({ query: supplierSearch, includeInactive: true }),
       getDesktopApi().suppliers.reconcile(),
+      getDesktopApi().customers.list({ query: customerSearch, includeInactive: true }),
     ]);
     if (!reportResult.ok) throw new Error(reportResult.error.message);
     if (!movementResult.ok) throw new Error(movementResult.error.message);
     if (!supplierResult.ok) throw new Error(supplierResult.error.message);
     if (!reconciliationResult.ok) throw new Error(reconciliationResult.error.message);
+    if (!customerResult.ok) throw new Error(customerResult.error.message);
     setInventoryReport(reportResult.data);
     setMovements(movementResult.data);
     setSuppliers(supplierResult.data);
     setApReconciliation(reconciliationResult.data);
+    setCustomers(customerResult.data);
 
     const pinResult = await getDesktopApi().auth.pinStatus();
     if (pinResult.ok) setPinConfigured(pinResult.data.configured);
@@ -235,7 +271,7 @@ export default function Home() {
     void refreshManagement().catch((loadError: unknown) => {
       setError(loadError instanceof Error ? loadError.message : "Unable to load inventory and supplier information.");
     });
-  }, [supplierSearch]);
+  }, [supplierSearch, customerSearch]);
 
   function openCreateForm() {
     setEditing(null);
@@ -336,6 +372,7 @@ export default function Home() {
     setError("");
     try {
       const result = await getDesktopApi().invoices.create({
+        ...(saleCustomerId ? { customerId: saleCustomerId } : {}),
         items: [{
           fabricId: details.fabric.id,
           quantityMeters: Number(saleQuantity),
@@ -345,6 +382,7 @@ export default function Home() {
       await refreshCatalog();
       await openDetails(details.fabric);
       setNotice(`Invoice ${result.data.invoiceNumber} recorded.`);
+      setSaleCustomerId("");
       setTimeout(() => setNotice(""), 3500);
     } catch (saleError) {
       setError(saleError instanceof Error ? saleError.message : "Unable to record this sale.");
@@ -474,6 +512,124 @@ export default function Home() {
       setError(saveError instanceof Error ? saveError.message : "Unable to save supplier.");
     } finally {
       setSaving(false);
+    }
+  }
+
+  function openCustomerForm(customer?: Customer) {
+    setCustomerEditing(customer ?? null);
+    setCustomerValues(customer ? {
+      code: customer.code,
+      name: customer.name,
+      phone: customer.phone,
+      address: customer.address,
+      openingBalance: "",
+      creditLimit: String(customer.creditLimitMinor / 100),
+      paymentTermsDays: String(customer.paymentTermsDays),
+      ownerPin: "",
+    } : {
+      code: "",
+      name: "",
+      phone: "",
+      address: "",
+      openingBalance: "",
+      creditLimit: "",
+      paymentTermsDays: "0",
+      ownerPin: "",
+    });
+    setCustomerFormOpen(true);
+    setError("");
+  }
+
+  async function saveCustomer(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setSaving(true);
+    setError("");
+    try {
+      const customerInput = {
+        code: customerValues.code,
+        name: customerValues.name,
+        phone: customerValues.phone,
+        address: customerValues.address,
+        creditLimit: Number(customerValues.creditLimit || 0),
+        paymentTermsDays: Number(customerValues.paymentTermsDays),
+      };
+      const result = customerEditing
+        ? await getDesktopApi().customers.update({ ...customerInput, id: customerEditing.id })
+        : await getDesktopApi().customers.create({
+          ...customerInput,
+          openingBalance: Number(customerValues.openingBalance || 0),
+          ownerPin: customerValues.ownerPin,
+        });
+      if (!result.ok) throw new Error(result.error.message);
+      await refreshManagement();
+      setCustomerFormOpen(false);
+      if (customerEditing) {
+        const detailResult = await getDesktopApi().customers.get({ id: customerEditing.id });
+        if (!detailResult.ok) throw new Error(detailResult.error.message);
+        setCustomerDetails(detailResult.data);
+      }
+      setNotice(customerEditing ? "Customer details updated." : "Customer added.");
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : "Unable to save customer.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function openCustomer(customer: Customer) {
+    setError("");
+    setCustomerTab("overview");
+    setCustomerStatement(null);
+    try {
+      const result = await getDesktopApi().customers.get({ id: customer.id });
+      if (!result.ok) throw new Error(result.error.message);
+      setCustomerDetails(result.data);
+    } catch (loadError) {
+      setError(loadError instanceof Error ? loadError.message : "Unable to load customer details.");
+    }
+  }
+
+  async function saveCustomerReceipt(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!customerDetails) return;
+    setSaving(true);
+    setError("");
+    try {
+      const result = await getDesktopApi().customers.receive({
+        customerId: customerDetails.customer.id,
+        amount: Number(receiptValues.amount),
+        account: receiptValues.account,
+        reference: receiptValues.reference,
+        note: receiptValues.note,
+      });
+      if (!result.ok) throw new Error(result.error.message);
+      setCustomerDetails(result.data);
+      setCustomerStatement(null);
+      await refreshManagement();
+      setReceiptOpen(false);
+      setReceiptValues({ amount: "", account: "cash", reference: "", note: "" });
+      setNotice("Customer receipt posted to Cash/Bank and Accounts Receivable.");
+    } catch (receiptError) {
+      setError(receiptError instanceof Error ? receiptError.message : "Unable to record customer receipt.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function loadCustomerStatement(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!customerDetails) return;
+    setError("");
+    try {
+      const result = await getDesktopApi().customers.statement({
+        customerId: customerDetails.customer.id,
+        from: customerStatementDates.from,
+        to: customerStatementDates.to,
+      });
+      if (!result.ok) throw new Error(result.error.message);
+      setCustomerStatement(result.data);
+    } catch (statementError) {
+      setError(statementError instanceof Error ? statementError.message : "Unable to generate customer ledger.");
     }
   }
 
@@ -623,7 +779,9 @@ export default function Home() {
       ? "Inventory"
       : section === "suppliers"
         ? "Suppliers"
-        : "Sales history";
+        : section === "customers"
+          ? customerDetails?.customer.name ?? "Customers"
+          : "Sales history";
 
   return (
     <main className="app-shell">
@@ -645,6 +803,9 @@ export default function Home() {
           </button>
           <button className={section === "suppliers" ? "nav-item active" : "nav-item"} onClick={() => setSection("suppliers")}>
             <span className="nav-icon">♧</span> Suppliers
+          </button>
+          <button className={section === "customers" ? "nav-item active" : "nav-item"} onClick={() => setSection("customers")}>
+            <span className="nav-icon">♙</span> Customers
           </button>
           <button className={section === "invoices" ? "nav-item active" : "nav-item"} onClick={() => setSection("invoices")}>
             <span className="nav-icon">▧</span> Sales history
@@ -679,6 +840,13 @@ export default function Home() {
             <div className="topbar-actions">
               {!pinConfigured && <button className="secondary-button" onClick={() => setPinSetupOpen(true)}>Set up owner PIN</button>}
               <button className="primary-button" onClick={() => openSupplierForm()}><span>+</span> Add supplier</button>
+            </div>
+          )}
+          {section === "customers" && (
+            <div className="topbar-actions">
+              {customerDetails && <button className="secondary-button" onClick={() => { setCustomerDetails(null); setCustomerStatement(null); }}>Back to customers</button>}
+              {!customerDetails && !pinConfigured && <button className="secondary-button" onClick={() => setPinSetupOpen(true)}>Set up owner PIN</button>}
+              {!customerDetails && <button className="primary-button" onClick={() => openCustomerForm()}><span>+</span> Add customer</button>}
             </div>
           )}
         </header>
@@ -784,6 +952,49 @@ export default function Home() {
             </>
           )}
 
+          {section === "customers" && (
+            customerDetails ? (
+              <CustomerDetailPage
+                details={customerDetails}
+                tab={customerTab}
+                onTabChange={(tab) => setCustomerTab(tab)}
+                onEdit={() => openCustomerForm(customerDetails.customer)}
+                onReceive={() => {
+                  setReceiptValues({ amount: "", account: "cash", reference: "", note: "" });
+                  setReceiptOpen(true);
+                }}
+                statement={customerStatement}
+                statementDates={customerStatementDates}
+                onStatementDatesChange={setCustomerStatementDates}
+                onStatementSubmit={(event) => void loadCustomerStatement(event)}
+                onPrintStatement={() => {
+                  document.body.classList.add("print-customer-statement");
+                  window.addEventListener("afterprint", () => document.body.classList.remove("print-customer-statement"), { once: true });
+                  window.print();
+                }}
+              />
+            ) : (
+              <>
+                <div className="summary-grid stock-summary-grid">
+                  <SummaryCard label="Customers" value={customers.length} icon="♙" />
+                  <SummaryCard label="Accounts Receivable" value={formatMoney(customers.reduce((sum, customer) => sum + customer.outstandingMinor, 0))} icon="₨" />
+                  <SummaryCard label="Credit customers" value={customers.filter((customer) => customer.creditLimitMinor > 0).length} icon="↗" />
+                  <SummaryCard label="Open balances" value={customers.filter((customer) => customer.outstandingMinor > 0).length} icon="◷" />
+                </div>
+                <div className="panel">
+                  <div className="panel-toolbar">
+                    <label className="search-field">
+                      <span aria-hidden="true">⌕</span>
+                      <input value={customerSearch} onChange={(event) => setCustomerSearch(event.target.value)} placeholder="Search customer code, name, phone…" aria-label="Search customers" />
+                    </label>
+                    <span className="history-count">{customers.length} customers</span>
+                  </div>
+                  <CustomerTable customers={customers} onOpen={(customer) => void openCustomer(customer)} />
+                </div>
+              </>
+            )
+          )}
+
           {section === "invoices" && (
             <>
               <div className="section-heading">
@@ -844,6 +1055,39 @@ export default function Home() {
         </Modal>
       )}
 
+      {customerFormOpen && (
+        <Modal title={customerEditing ? "Edit customer" : "Add customer"} onClose={() => setCustomerFormOpen(false)}>
+          {error && <div className="error-banner modal-error" role="alert">{error}</div>}
+          <form className="adjustment-form" onSubmit={(event) => void saveCustomer(event)}>
+            <div className="form-grid">
+              <FormField label="Customer code" required><input required autoFocus maxLength={40} value={customerValues.code} onChange={(event) => setCustomerValues({ ...customerValues, code: event.target.value })} placeholder="CUS-0001" /></FormField>
+              <FormField label="Customer name" required><input required maxLength={120} value={customerValues.name} onChange={(event) => setCustomerValues({ ...customerValues, name: event.target.value })} placeholder="Customer name" /></FormField>
+              <FormField label="Phone"><input maxLength={40} value={customerValues.phone} onChange={(event) => setCustomerValues({ ...customerValues, phone: event.target.value })} /></FormField>
+              <FormField label="Address"><input maxLength={240} value={customerValues.address} onChange={(event) => setCustomerValues({ ...customerValues, address: event.target.value })} /></FormField>
+              <FormField label="Credit limit" required hint="Set to 0 to disallow credit sales."><div className="input-prefix"><span>PKR</span><input required type="number" min="0" step="0.01" value={customerValues.creditLimit} onChange={(event) => setCustomerValues({ ...customerValues, creditLimit: event.target.value })} /></div></FormField>
+              <FormField label="Payment terms" required><div className="input-suffix"><input required type="number" min="0" max="3650" step="1" value={customerValues.paymentTermsDays} onChange={(event) => setCustomerValues({ ...customerValues, paymentTermsDays: event.target.value })} /><span>days</span></div></FormField>
+              {!customerEditing && <FormField label="Opening receivable" hint="Posted to Accounts Receivable and Opening Balance Equity."><div className="input-prefix"><span>PKR</span><input type="number" min="0" step="0.01" value={customerValues.openingBalance} onChange={(event) => setCustomerValues({ ...customerValues, openingBalance: event.target.value })} /></div></FormField>}
+              {!customerEditing && Number(customerValues.openingBalance) > 0 && <FormField label="Owner PIN" required hint={pinConfigured ? "Authorizes this opening receivable." : "Set up an owner PIN before recording an opening balance."}><input required type="password" inputMode="numeric" minLength={6} value={customerValues.ownerPin} onChange={(event) => setCustomerValues({ ...customerValues, ownerPin: event.target.value })} /></FormField>}
+            </div>
+            <div className="modal-actions"><button className="secondary-button" type="button" onClick={() => setCustomerFormOpen(false)}>Cancel</button><button className="primary-button" disabled={saving}>{saving ? "Saving…" : customerEditing ? "Save changes" : "Add customer"}</button></div>
+          </form>
+        </Modal>
+      )}
+
+      {receiptOpen && customerDetails && (
+        <Modal title="Record customer receipt" onClose={() => setReceiptOpen(false)}>
+          {error && <div className="error-banner modal-error" role="alert">{error}</div>}
+          <p className="adjustment-product">Outstanding receivable: <strong>{formatMoney(customerDetails.customer.outstandingMinor)}</strong></p>
+          <form className="adjustment-form" onSubmit={(event) => void saveCustomerReceipt(event)}>
+            <FormField label="Amount" required><div className="input-prefix"><span>PKR</span><input required type="number" min="0.01" max={customerDetails.customer.outstandingMinor / 100} step="0.01" value={receiptValues.amount} onChange={(event) => setReceiptValues({ ...receiptValues, amount: event.target.value })} /></div></FormField>
+            <FormField label="Received into" required><select value={receiptValues.account} onChange={(event) => setReceiptValues({ ...receiptValues, account: event.target.value as "cash" | "bank" })}><option value="cash">Cash</option><option value="bank">Bank</option></select></FormField>
+            <FormField label="Reference"><input maxLength={100} value={receiptValues.reference} onChange={(event) => setReceiptValues({ ...receiptValues, reference: event.target.value })} /></FormField>
+            <FormField label="Note"><input maxLength={160} value={receiptValues.note} onChange={(event) => setReceiptValues({ ...receiptValues, note: event.target.value })} /></FormField>
+            <div className="modal-actions"><button className="secondary-button" type="button" onClick={() => setReceiptOpen(false)}>Cancel</button><button className="primary-button" disabled={saving}>{saving ? "Posting…" : "Record receipt"}</button></div>
+          </form>
+        </Modal>
+      )}
+
       {details && (
         <Modal title="Fabric details" onClose={() => setDetails(null)} wide>
           <div className="detail-head">
@@ -865,8 +1109,10 @@ export default function Home() {
               <div><h3>Record sale</h3><p>Creates an invoice at the current selling rate and reduces stock.</p></div>
               <div className="sale-controls">
                 <label><span>Quantity (m)</span><input type="number" min="0.001" step="0.001" required value={saleQuantity} onChange={(event) => setSaleQuantity(event.target.value)} placeholder="2.500" /></label>
+                <label className="sale-customer-field"><span>Customer (optional)</span><select value={saleCustomerId} onChange={(event) => setSaleCustomerId(event.target.value)}><option value="">Walk-in sale</option>{customers.filter((customer) => customer.active).map((customer) => <option key={customer.id} value={customer.id}>{customer.code} · {customer.name} · Limit {formatMoney(customer.creditLimitMinor)}</option>)}</select></label>
                 <button className="primary-button" type="submit" disabled={saving}>{saving ? "Recording…" : "Create invoice"}</button>
               </div>
+              {saleCustomerId && <p className="form-footnote">Customer sales are posted to Accounts Receivable and must fit within that customer’s credit limit. A zero limit permits no credit sales.</p>}
             </form>
           )}
           {error && <div className="error-banner modal-error" role="alert">{error}</div>}
@@ -1162,7 +1408,132 @@ function SupplierTable({ suppliers, onOpen }: { suppliers: Supplier[]; onOpen: (
   );
 }
 
-function StatementTable({ statement }: { statement: SupplierStatement }) {
+function CustomerTable({ customers: customerRows, onOpen }: { customers: Customer[]; onOpen: (customer: Customer) => void }) {
+  if (customerRows.length === 0) return <EmptyState title="No customers found" copy="Add a customer to track credit sales, receipts and statements." />;
+  return (
+    <div className="table-wrap">
+      <table>
+        <thead><tr><th>Customer</th><th>Phone</th><th>Sales</th><th>Receipts</th><th>Credit limit</th><th>Outstanding</th><th /></tr></thead>
+        <tbody>{customerRows.map((customer) => <tr key={customer.id}>
+          <td><button className="fabric-link" onClick={() => onOpen(customer)}><strong>{customer.name}</strong><span>{customer.code}</span></button></td>
+          <td>{customer.phone || "—"}</td>
+          <td>{customer.salesCount}</td>
+          <td>{customer.receiptCount}</td>
+          <td>{formatMoney(customer.creditLimitMinor)}</td>
+          <td><strong>{formatMoney(customer.outstandingMinor)}</strong></td>
+          <td><button className="secondary-button table-button" onClick={() => onOpen(customer)}>View account</button></td>
+        </tr>)}</tbody>
+      </table>
+    </div>
+  );
+}
+
+function CustomerDetailPage({
+  details,
+  tab,
+  onTabChange,
+  onEdit,
+  onReceive,
+  statement,
+  statementDates,
+  onStatementDatesChange,
+  onStatementSubmit,
+  onPrintStatement,
+}: {
+  details: CustomerDetails;
+  tab: CustomerTab;
+  onTabChange: (tab: CustomerTab) => void;
+  onEdit: () => void;
+  onReceive: () => void;
+  statement: CustomerStatement | null;
+  statementDates: { from: string; to: string };
+  onStatementDatesChange: (dates: { from: string; to: string }) => void;
+  onStatementSubmit: (event: FormEvent<HTMLFormElement>) => void;
+  onPrintStatement: () => void;
+}) {
+  const { customer } = details;
+  const availableCreditMinor = Math.max(0, customer.creditLimitMinor - customer.outstandingMinor);
+  return (
+    <div className="customer-detail-page">
+      <div className="detail-head">
+        <div><span className="sku-label">{customer.code}</span><h2>{customer.name}</h2><p>{customer.phone || "No phone recorded"}{customer.address ? ` · ${customer.address}` : ""}</p></div>
+        <StatusBadge active={customer.active} />
+      </div>
+      <div className="detail-metrics">
+        <Metric label="Outstanding receivable" value={formatMoney(customer.outstandingMinor)} />
+        <Metric label="Credit limit" value={formatMoney(customer.creditLimitMinor)} />
+        <Metric label="Available credit" value={formatMoney(availableCreditMinor)} />
+        <Metric label="Payment terms" value={`${customer.paymentTermsDays} days`} />
+      </div>
+      <div className="detail-actions customer-actions">
+        <button className="secondary-button" onClick={onEdit}>Edit customer</button>
+        <button className="primary-button" onClick={onReceive} disabled={customer.outstandingMinor <= 0}>Record receipt</button>
+      </div>
+      <div className="inventory-tabs customer-tabs" role="tablist" aria-label="Customer account details">
+        {([
+          ["overview", "Overview"],
+          ["sales", "Sales"],
+          ["payments", "Payments"],
+          ["ledger", "Ledger"],
+        ] as Array<[CustomerTab, string]>).map(([value, label]) => (
+          <button key={value} role="tab" aria-selected={tab === value} className={tab === value ? "active" : ""} onClick={() => onTabChange(value)}>{label}</button>
+        ))}
+      </div>
+      {tab === "overview" && (
+        <div className="customer-overview">
+          <section className="panel customer-contact">
+            <div className="section-heading panel-section-heading"><div><h2>Account overview</h2><p>Customer receivables are calculated from the Accounts Receivable ledger.</p></div></div>
+            <dl><div><dt>Customer code</dt><dd>{customer.code}</dd></div><div><dt>Phone</dt><dd>{customer.phone || "—"}</dd></div><div><dt>Address</dt><dd>{customer.address || "—"}</dd></div><div><dt>Sales invoices</dt><dd>{customer.salesCount}</dd></div><div><dt>Receipts</dt><dd>{customer.receiptCount}</dd></div></dl>
+          </section>
+          <section className="panel customer-recent">
+            <div className="section-heading panel-section-heading"><div><h2>Recent activity</h2><p>Latest sales and receipts for this account.</p></div></div>
+            {details.sales.length === 0 && details.receipts.length === 0 ? <p className="muted-message">No customer transactions recorded.</p> : (
+              <div className="history-block">
+                {details.sales.slice(0, 3).map((invoice) => <div className="history-row" key={invoice.id}><div><strong>{invoice.invoiceNumber} · Sale</strong><span>{formatDate(invoice.createdAt)}</span></div><div className="history-price"><strong>{formatMoney(invoice.totalMinor)}</strong></div></div>)}
+                {details.receipts.slice(0, 3).map((receipt) => <div className="history-row" key={receipt.id}><div><strong>{receipt.receiptNumber} · Receipt</strong><span>{formatDate(receipt.createdAt)} · {receipt.account.toUpperCase()}</span></div><div className="history-price"><strong>{formatMoney(receipt.amountMinor)}</strong></div></div>)}
+              </div>
+            )}
+          </section>
+        </div>
+      )}
+      {tab === "sales" && (
+        <div className="customer-tab-content">
+          <div className="section-heading"><div><h2>Sales history</h2><p>Invoice totals and line prices are preserved as recorded.</p></div><span className="history-count">{details.sales.length} invoices</span></div>
+          {details.sales.length === 0 ? <EmptyState title="No sales recorded" copy="Credit invoices for this customer will appear here." /> : <div className="invoice-list">{details.sales.map((invoice) => <InvoiceCard key={invoice.id} invoice={invoice} />)}</div>}
+        </div>
+      )}
+      {tab === "payments" && (
+        <div className="customer-tab-content">
+          <div className="section-heading"><div><h2>Payments received</h2><p>Receipts are posted to Cash/Bank and reduce this customer’s receivable.</p></div><span className="history-count">{details.receipts.length} receipts</span></div>
+          {details.receipts.length === 0 ? <EmptyState title="No receipts recorded" copy="Customer payments will appear here." /> : (
+            <div className="panel"><div className="table-wrap"><table>
+              <thead><tr><th>Receipt</th><th>Date</th><th>Account</th><th>Reference / note</th><th>Amount</th></tr></thead>
+              <tbody>{details.receipts.map((receipt) => <tr key={receipt.id}>
+                <td><strong>{receipt.receiptNumber}</strong></td><td>{formatDate(receipt.createdAt)}</td><td>{receipt.account.toUpperCase()}</td>
+                <td>{receipt.reference || receipt.note || "—"}</td><td><strong>{formatMoney(receipt.amountMinor)}</strong></td>
+              </tr>)}</tbody>
+            </table></div></div>
+          )}
+        </div>
+      )}
+      {tab === "ledger" && (
+        <div className="customer-statement-print">
+          <div className="section-heading"><div><h2>Customer ledger statement</h2><p>Opening and closing balances are calculated from customer-linked AR postings.</p></div>
+            {statement && <button className="secondary-button" onClick={onPrintStatement}>Print statement</button>}
+          </div>
+          <form className="statement-filter" onSubmit={(event) => onStatementSubmit(event)}>
+            <FormField label="From"><input type="date" required value={statementDates.from} onChange={(event) => onStatementDatesChange({ ...statementDates, from: event.target.value })} /></FormField>
+            <FormField label="To"><input type="date" required value={statementDates.to} onChange={(event) => onStatementDatesChange({ ...statementDates, to: event.target.value })} /></FormField>
+            <button className="primary-button">Generate statement</button>
+          </form>
+          {statement ? <StatementTable statement={statement} /> : <p className="muted-message">Choose a date range to generate the customer ledger.</p>}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function StatementTable({ statement }: { statement: SupplierStatement | CustomerStatement }) {
   return (
     <div className="statement-panel">
       <div className="statement-balances">
@@ -1195,7 +1566,7 @@ function StatusBadge({ active, low = false }: { active: boolean; low?: boolean }
 function InvoiceCard({ invoice }: { invoice: Invoice }) {
   return (
     <article className="invoice-card">
-      <header><div><strong>{invoice.invoiceNumber}</strong><span>{formatDate(invoice.createdAt)}</span></div><strong className="invoice-total">{formatMoney(invoice.totalMinor)}</strong></header>
+      <header><div><strong>{invoice.invoiceNumber}</strong><span>{formatDate(invoice.createdAt)}{invoice.customerName ? ` · ${invoice.customerCode} ${invoice.customerName}` : ""}</span></div><strong className="invoice-total">{formatMoney(invoice.totalMinor)}</strong></header>
       <div className="invoice-lines">{invoice.items.map((item) => <div className="invoice-line" key={item.id}><span><strong>{item.sku}</strong> · {item.name}<small>{formatMeters(item.quantityMm)} × {formatMoney(item.unitPriceMinor)} / m</small></span><strong>{formatMoney(item.lineTotalMinor)}</strong></div>)}</div>
     </article>
   );

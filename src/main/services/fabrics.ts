@@ -42,6 +42,9 @@ interface InvoiceRow {
   invoice_number: string;
   total_minor: number;
   created_at: string;
+  customer_id?: string | null;
+  customer_code?: string | null;
+  customer_name?: string | null;
 }
 
 interface InvoiceItemRow {
@@ -91,6 +94,9 @@ function mapInvoice(row: InvoiceRow, items: InvoiceItem[]): Invoice {
     invoiceNumber: row.invoice_number,
     totalMinor: row.total_minor,
     createdAt: row.created_at,
+    customerId: row.customer_id ?? undefined,
+    customerCode: row.customer_code ?? undefined,
+    customerName: row.customer_name ?? undefined,
     items,
   };
 }
@@ -152,9 +158,11 @@ export class FabricService {
   get(id: string): FabricDetails {
     const fabric = this.getFabric(id);
     const invoices = this.database.prepare(`
-      SELECT DISTINCT i.id, i.invoice_number, i.total_minor, i.created_at
+      SELECT DISTINCT i.id, i.invoice_number, i.total_minor, i.created_at,
+             i.customer_id, c.code AS customer_code, c.name AS customer_name
       FROM invoices i
       JOIN invoice_items item ON item.invoice_id = i.id
+      LEFT JOIN customers c ON c.id = i.customer_id
       WHERE item.fabric_id = ?
       ORDER BY i.created_at DESC
     `).all(id) as InvoiceRow[];
@@ -251,9 +259,16 @@ export class FabricService {
     const datePart = createdAt.slice(0, 10).replaceAll("-", "");
     const invoiceNumber = `GF-${datePart}-${id.slice(0, 6).toUpperCase()}`;
     let totalMinor = 0;
+    let invoiceCustomer: { id: string; code: string; name: string; credit_limit_minor: number } | undefined;
     const invoiceItems: InvoiceItem[] = [];
 
     const create = this.database.transaction(() => {
+      if (input.customerId) {
+        invoiceCustomer = this.database.prepare(`
+          SELECT id, code, name, credit_limit_minor FROM customers WHERE id = ? AND active = 1
+        `).get(input.customerId) as { id: string; code: string; name: string; credit_limit_minor: number } | undefined;
+        if (!invoiceCustomer) throw new FabricServiceError("NOT_FOUND", "Active customer not found.");
+      }
       const lines = input.items.map((item) => {
         const fabric = this.getFabric(item.fabricId);
         if (!fabric.active) {
@@ -275,10 +290,19 @@ export class FabricService {
       if (!Number.isSafeInteger(totalMinor)) {
         throw new FabricServiceError("VALIDATION", "The invoice total exceeds the supported accounting precision.");
       }
+      if (invoiceCustomer) {
+        const outstanding = this.database.prepare(`
+          SELECT COALESCE(SUM(debit_minor - credit_minor), 0) AS balance
+          FROM ledger_postings WHERE account_code = '1300' AND customer_id = ?
+        `).get(invoiceCustomer.id) as { balance: number };
+        if (outstanding.balance + totalMinor > invoiceCustomer.credit_limit_minor) {
+          throw new FabricServiceError("CONFLICT", "This sale would exceed the customer's credit limit.");
+        }
+      }
       const costOfGoodsSold = lines.reduce((total, line) => total + line.costMinor, 0);
       this.database.prepare(
-        "INSERT INTO invoices (id, invoice_number, total_minor, created_at) VALUES (?, ?, ?, ?)",
-      ).run(id, invoiceNumber, totalMinor, createdAt);
+        "INSERT INTO invoices (id, invoice_number, total_minor, created_at, customer_id) VALUES (?, ?, ?, ?, ?)",
+      ).run(id, invoiceNumber, totalMinor, createdAt, invoiceCustomer?.id ?? null);
       for (const line of lines) {
         const itemId = randomUUID();
         this.database.prepare(`
@@ -310,7 +334,7 @@ export class FabricService {
         });
       }
       postJournal(this.database, "sale", invoiceNumber, createdAt, [
-        { accountCode: "1300", debitMinor: totalMinor },
+        { accountCode: "1300", debitMinor: totalMinor, customerId: invoiceCustomer?.id },
         { accountCode: "4000", creditMinor: totalMinor },
         { accountCode: "5000", debitMinor: costOfGoodsSold },
         { accountCode: "1200", creditMinor: costOfGoodsSold },
@@ -322,14 +346,21 @@ export class FabricService {
       invoiceNumber,
       totalMinor,
       createdAt,
+      ...(invoiceCustomer ? {
+        customerId: invoiceCustomer.id,
+        customerCode: invoiceCustomer.code,
+        customerName: invoiceCustomer.name,
+      } : {}),
       items: invoiceItems,
     };
   }
 
   listInvoices(): Invoice[] {
     const rows = this.database.prepare(`
-      SELECT id, invoice_number, total_minor, created_at
-      FROM invoices ORDER BY created_at DESC
+      SELECT i.id, i.invoice_number, i.total_minor, i.created_at,
+             i.customer_id, c.code AS customer_code, c.name AS customer_name
+      FROM invoices i LEFT JOIN customers c ON c.id = i.customer_id
+      ORDER BY i.created_at DESC
     `).all() as InvoiceRow[];
     return rows.map((row) => {
       const items = this.database.prepare(`

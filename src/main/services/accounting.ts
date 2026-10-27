@@ -7,6 +7,7 @@ export interface JournalLineInput {
   debitMinor?: number;
   creditMinor?: number;
   supplierId?: string;
+  customerId?: string;
 }
 
 function roundedDivision(numerator: bigint, denominator: bigint): number {
@@ -81,8 +82,8 @@ export function postJournal(
   `).run(transactionId, transactionType, reference, authorizedUser, createdAt);
   const insertPosting = database.prepare(`
     INSERT INTO ledger_postings (
-      id, transaction_id, account_code, supplier_id, debit_minor, credit_minor
-    ) VALUES (?, ?, ?, ?, ?, ?)
+      id, transaction_id, account_code, supplier_id, customer_id, debit_minor, credit_minor
+    ) VALUES (?, ?, ?, ?, ?, ?, ?)
   `);
   for (const line of lines) {
     const debit = line.debitMinor ?? 0;
@@ -93,6 +94,7 @@ export function postJournal(
       transactionId,
       line.accountCode,
       line.supplierId ?? null,
+      line.customerId ?? null,
       debit,
       credit,
     );

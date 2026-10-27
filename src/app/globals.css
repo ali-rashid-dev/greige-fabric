@@ -1157,8 +1157,85 @@ td {
   height: 32px;
 }
 
+.sale-customer-field {
+  min-width: 190px;
+}
+
+.sale-controls select {
+  width: 100%;
+  max-width: 250px;
+  height: 32px;
+  padding: 0 8px;
+  border: 1px solid #e4e9e4;
+  border-radius: 5px;
+  background: white;
+  font-size: 9px;
+}
+
+.sale-controls select:focus {
+  border-color: #99b5a0;
+  outline: 0;
+  box-shadow: 0 0 0 2px rgb(86 125 104 / 10%);
+}
+
 .history-block {
   margin-top: 20px;
+}
+
+.customer-detail-page {
+  max-width: 1100px;
+}
+
+.customer-tabs {
+  margin-top: 12px;
+}
+
+.customer-overview {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 12px;
+}
+
+.customer-contact dl {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  margin: 0;
+  padding: 15px;
+}
+
+.customer-contact dl > div {
+  display: grid;
+  gap: 5px;
+}
+
+.customer-contact dt {
+  color: #929c94;
+  font-size: 8px;
+}
+
+.customer-contact dd {
+  margin: 0;
+  color: #58675c;
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.customer-recent {
+  padding-bottom: 4px;
+}
+
+.customer-recent .history-block {
+  margin-top: 0;
+  padding: 0 14px;
+}
+
+.customer-tab-content {
+  margin-top: 19px;
+}
+
+.customer-statement-print .statement-filter {
+  margin-bottom: 12px;
 }
 
 .section-heading.compact {
@@ -1228,6 +1305,41 @@ td {
   clip: rect(0, 0, 0, 0);
   white-space: nowrap;
   clip-path: inset(50%);
+}
+
+@media print {
+  body.print-customer-statement {
+    background: white;
+  }
+
+  body.print-customer-statement .app-shell > .sidebar,
+  body.print-customer-statement .main-content > .topbar,
+  body.print-customer-statement .content-scroll > :not(.customer-detail-page),
+  body.print-customer-statement .customer-detail-page > :not(.customer-statement-print),
+  body.print-customer-statement .customer-statement-print > .section-heading > button,
+  body.print-customer-statement .customer-statement-print .statement-filter {
+    display: none !important;
+  }
+
+  body.print-customer-statement .main-content,
+  body.print-customer-statement .content-scroll {
+    display: block;
+    width: 100%;
+    max-width: none;
+    padding: 0;
+  }
+
+  body.print-customer-statement .customer-statement-print {
+    display: block;
+  }
+
+  body.print-customer-statement .statement-panel {
+    border: 0;
+  }
+
+  body.print-customer-statement .statement-balances {
+    padding: 8px 0;
+  }
 }
 
 @media (max-width: 1020px) {
@@ -1346,6 +1458,15 @@ td {
 
   .sale-controls {
     justify-content: space-between;
+    flex-wrap: wrap;
+  }
+
+  .sale-customer-field {
+    flex: 1 1 100%;
+  }
+
+  .sale-controls select {
+    max-width: none;
   }
 
   .modal-backdrop {
@@ -1354,6 +1475,10 @@ td {
   }
 
   .statement-filter {
+    grid-template-columns: 1fr;
+  }
+
+  .customer-overview {
     grid-template-columns: 1fr;
   }
 
