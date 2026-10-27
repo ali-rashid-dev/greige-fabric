@@ -150,6 +150,34 @@ describe("fabric quality catalog", () => {
     }
   });
 
+  it("includes inactive inventory in report totals and AP inventory reconciliation", async () => {
+    const { database, service, inventory, close } = await createService();
+    try {
+      const fabric = service.create(fabricInputSchema.parse(sampleFabric));
+      service.adjustStock({
+        fabricId: fabric.id,
+        direction: "add",
+        quantityMeters: 2,
+        reason: "Initial receipt",
+      }, "Owner");
+      service.setActive(fabric.id, false);
+
+      const report = inventory.report();
+      const ledgerInventory = database.prepare(`
+        SELECT COALESCE(SUM(debit_minor - credit_minor), 0) AS value
+        FROM ledger_postings WHERE account_code = '1200'
+      `).get() as { value: number };
+      expect(report.totalStockMm).toBe(2000);
+      expect(report.totalValuationMinor).toBe(29000);
+      expect(report.totalValuationMinor).toBe(ledgerInventory.value);
+      expect(report.lowStockCount).toBe(0);
+      expect(report.valuation).toHaveLength(1);
+      expect(report.valuation[0].lowStock).toBe(false);
+    } finally {
+      close();
+    }
+  });
+
   it("posts receipts and sales atomically using integer millimeters", async () => {
     const { database, service, suppliers, inventory, close } = await createService();
     try {

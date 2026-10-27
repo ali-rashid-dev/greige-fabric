@@ -177,10 +177,8 @@ export class InventoryService {
       lowStock: row.active === 1 && row.stock_qty_mm <= row.reorder_threshold_mm,
     }));
     return {
-      totalStockMm: valuation.filter((row) => rows.find((item) => item.id === row.fabricId)?.active === 1)
-        .reduce((total, row) => total + row.stockQtyMm, 0),
-      totalValuationMinor: valuation.filter((row) => rows.find((item) => item.id === row.fabricId)?.active === 1)
-        .reduce((total, row) => total + row.valueMinor, 0),
+      totalStockMm: rows.reduce((total, row) => total + row.stock_qty_mm, 0),
+      totalValuationMinor: rows.reduce((total, row) => total + row.stock_value_minor, 0),
       lowStockCount: valuation.filter((row) => row.lowStock).length,
       valuation,
     };
