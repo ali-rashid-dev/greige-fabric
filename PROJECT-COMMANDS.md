@@ -33,14 +33,16 @@ Use `Ctrl+C` to stop development processes.
 | Command | Usage |
 | --- | --- |
 | `npm run build` | Build the static Next.js renderer into `out/` and Electron main process into `dist-electron/`. |
-| `npm run dist` | Build and package for the current host platform. |
+| `npm run dist` | Build the Windows x64 NSIS installer (same as `npm run dist:win`). |
 | `npm run dist:win` | Build Windows NSIS installer(s). |
 | `npm run dist:mac` | Build a macOS DMG. Run on a macOS build machine. |
 | `npm run dist:linux` | Build Linux AppImage and DEB packages. |
 
-Packaged artifacts are written to `release/`. Cross-platform builds may need a
-native runner for the target operating system. macOS signing and notarization
-are not configured by default.
+Packaged artifacts are written to `release/`. Build on a native runner for the
+target operating system and architecture so native dependencies match the
+platform. The Windows NSIS installer requires Windows or Wine. macOS signing
+and notarization are not configured by default. See [INSTALLING.md](./INSTALLING.md)
+for end-user installation instructions.
 
 The runtime POS database is created in Electron's per-user application data
 directory. SQL schema migrations live in `database/migrations/` and are bundled

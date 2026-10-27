@@ -7,10 +7,10 @@ import type { BackupFrequency, BackupSettings, BackupVerification } from "../../
 import { FabricServiceError } from "./errors";
 
 const settingsSchema = z.object({
-  destinationDirectory: z.string(),
+  destinationDirectory: z.string().trim().min(1),
   frequency: z.enum(["disabled", "daily", "weekly"]),
-  lastBackupAt: z.string().nullable(),
-  lastAttemptAt: z.string().nullable().optional(),
+  lastBackupAt: z.string().datetime().nullable(),
+  lastAttemptAt: z.string().datetime().nullable().optional(),
   lastError: z.string().nullable(),
 }).strict();
 
@@ -283,19 +283,36 @@ export class BackupService {
     let movedMain = false;
     let movedWal = false;
     let movedShm = false;
+    let installedRestore = false;
     try {
       movedMain = await renameIfPresent(databasePath, previousPath);
       movedWal = await renameIfPresent(`${databasePath}-wal`, previousWalPath);
       movedShm = await renameIfPresent(`${databasePath}-shm`, previousShmPath);
       await rename(resolvedStaged, databasePath);
+      installedRestore = true;
+      await rm(markerPath);
     } catch (error) {
+      if (installedRestore) await renameIfPresent(databasePath, resolvedStaged);
       if (movedMain) await renameIfPresent(previousPath, databasePath);
       if (movedWal) await renameIfPresent(previousWalPath, `${databasePath}-wal`);
       if (movedShm) await renameIfPresent(previousShmPath, `${databasePath}-shm`);
       throw error;
     }
-    await rm(markerPath);
     return true;
+  }
+
+  static async movePendingRestoreAside(userDataDirectory: string): Promise<string> {
+    const markerPath = path.join(userDataDirectory, "pending-database-restore.json");
+    const asidePath = path.join(
+      userDataDirectory,
+      `pending-database-restore-${Date.now()}-${randomUUID().slice(0, 8)}.json`,
+    );
+    await rename(markerPath, asidePath);
+    return asidePath;
+  }
+
+  static async discardPendingRestore(userDataDirectory: string): Promise<void> {
+    await rm(path.join(userDataDirectory, "pending-database-restore.json"), { force: true });
   }
 
   private async assertExternalDirectory(directory: string): Promise<string> {

@@ -1739,6 +1739,98 @@ describe("fabric quality catalog", () => {
     }
   });
 
+  it("keeps a failed restore request until it is explicitly moved aside or discarded", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "greige-pending-restore-"));
+    temporaryDirectories.push(directory);
+    const userDataDirectory = path.join(directory, "user-data");
+    const databasePath = path.join(userDataDirectory, "pos.sqlite");
+    const database = await openDatabase(databasePath, migrationsDirectory);
+    const markerPath = path.join(userDataDirectory, "pending-database-restore.json");
+    try {
+      await writeFile(markerPath, JSON.stringify({ stagedPath: "invalid" }));
+
+      await expect(BackupService.applyPendingRestore(databasePath, userDataDirectory)).rejects.toThrow();
+      expect(await readdir(userDataDirectory)).toContain("pending-database-restore.json");
+
+      const asidePath = await BackupService.movePendingRestoreAside(userDataDirectory);
+      expect(path.basename(asidePath)).toMatch(/^pending-database-restore-/);
+      expect(await readdir(userDataDirectory)).not.toContain("pending-database-restore.json");
+      expect(database.pragma("integrity_check", { simple: true })).toBe("ok");
+
+      await writeFile(markerPath, JSON.stringify({ stagedPath: "invalid" }));
+      await BackupService.discardPendingRestore(userDataDirectory);
+      expect(await readdir(userDataDirectory)).not.toContain("pending-database-restore.json");
+    } finally {
+      database.close();
+    }
+  });
+
+  it("falls back to default backup preferences when destination or timestamps are invalid", async () => {
+    const invalidPreferences = [
+      { destinationDirectory: "" },
+      { lastBackupAt: "not-a-datetime" },
+      { lastAttemptAt: "not-a-datetime" },
+    ];
+
+    for (const invalid of invalidPreferences) {
+      const directory = await mkdtemp(path.join(os.tmpdir(), "greige-backup-settings-"));
+      temporaryDirectories.push(directory);
+      const userDataDirectory = path.join(directory, "user-data");
+      const applicationDirectory = path.join(directory, "application");
+      const databasePath = path.join(userDataDirectory, "pos.sqlite");
+      await mkdir(applicationDirectory);
+      const database = await openDatabase(databasePath, migrationsDirectory);
+      await writeFile(path.join(userDataDirectory, "backup-settings.json"), JSON.stringify({
+        destinationDirectory: path.join(directory, "backups"),
+        frequency: "disabled",
+        lastBackupAt: null,
+        lastAttemptAt: null,
+        lastError: null,
+        ...invalid,
+      }));
+
+      try {
+        const backups = await BackupService.create(
+          database,
+          databasePath,
+          userDataDirectory,
+          applicationDirectory,
+        );
+        const settings = await backups.getSettings();
+        expect(settings.destinationDirectory).toBe(path.join(userDataDirectory, "backups"));
+        expect(settings.lastBackupAt).toBeNull();
+        expect(settings.lastError).toContain("Backup preferences could not be loaded:");
+      } finally {
+        database.close();
+      }
+    }
+
+    const directory = await mkdtemp(path.join(os.tmpdir(), "greige-backup-settings-"));
+    temporaryDirectories.push(directory);
+    const userDataDirectory = path.join(directory, "user-data");
+    const applicationDirectory = path.join(directory, "application");
+    const databasePath = path.join(userDataDirectory, "pos.sqlite");
+    await mkdir(applicationDirectory);
+    const database = await openDatabase(databasePath, migrationsDirectory);
+    await writeFile(path.join(userDataDirectory, "backup-settings.json"), JSON.stringify({
+      destinationDirectory: path.join(directory, "backups"),
+      frequency: "disabled",
+      lastBackupAt: null,
+      lastError: null,
+    }));
+    try {
+      const backups = await BackupService.create(
+        database,
+        databasePath,
+        userDataDirectory,
+        applicationDirectory,
+      );
+      expect((await backups.getSettings()).lastError).toBeNull();
+    } finally {
+      database.close();
+    }
+  });
+
   it("rejects corrupt files as backups and prevents restoring the live database", async () => {
     const directory = await mkdtemp(path.join(os.tmpdir(), "greige-backup-validation-"));
     temporaryDirectories.push(directory);
@@ -1916,6 +2008,50 @@ describe("fabric quality catalog", () => {
         FROM invoice_items WHERE invoice_id = 'legacy-invoice'
       `).get() as { total: number };
       expect(allocation.total).toBe(2);
+    } finally {
+      database.close();
+    }
+  });
+
+  it("rebuilds legacy invoice return balances from active sales returns", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "greige-return-balance-migration-"));
+    temporaryDirectories.push(directory);
+    const oldMigrations = path.join(directory, "old-migrations");
+    await mkdir(oldMigrations);
+    for (const name of (await readdir(migrationsDirectory)).filter((entry) => entry < "013_reconcile_active_sales_returns.sql")) {
+      await copyFile(path.join(migrationsDirectory, name), path.join(oldMigrations, name));
+    }
+
+    const databasePath = path.join(directory, "existing-pos.sqlite");
+    let database = await openDatabase(databasePath, oldMigrations);
+    database.prepare(`
+      INSERT INTO customers (id, code, name, created_at, updated_at)
+      VALUES ('return-migration-customer', 'RET-MIG', 'Return Migration', '2026-10-01', '2026-10-01')
+    `).run();
+    database.prepare(`
+      INSERT INTO invoices (id, invoice_number, total_minor, created_at, customer_id, returned_minor)
+      VALUES ('return-migration-invoice', 'INV-RET-MIG', 1000, '2026-10-01', 'return-migration-customer', 900)
+    `).run();
+    database.prepare(`
+      INSERT INTO sales_returns (
+        id, return_number, invoice_id, customer_id, settlement_type, reason,
+        total_minor, receivable_minor, advance_minor, created_at, authorized_user,
+        reversed_at, reversal_reason
+      ) VALUES
+        ('active-return-1', 'SR-ACTIVE-1', 'return-migration-invoice', 'return-migration-customer',
+          'customer_credit', 'Active return', 100, 100, 0, '2026-10-02', 'Owner', NULL, ''),
+        ('active-return-2', 'SR-ACTIVE-2', 'return-migration-invoice', 'return-migration-customer',
+          'customer_credit', 'Active return', 25, 25, 0, '2026-10-03', 'Owner', NULL, ''),
+        ('reversed-return', 'SR-REVERSED', 'return-migration-invoice', 'return-migration-customer',
+          'customer_credit', 'Reversed return', 300, 300, 0, '2026-10-04', 'Owner', '2026-10-05', 'Entered in error')
+    `).run();
+    database.close();
+
+    database = await openDatabase(databasePath, migrationsDirectory);
+    try {
+      expect(database.prepare(`
+        SELECT returned_minor FROM invoices WHERE id = 'return-migration-invoice'
+      `).get()).toEqual({ returned_minor: 125 });
     } finally {
       database.close();
     }

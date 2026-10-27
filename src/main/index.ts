@@ -122,7 +122,44 @@ app.whenReady().then(async () => {
   try {
     const databasePath = path.join(app.getPath("userData"), "greige-fabric-pos.sqlite");
     const userDataDirectory = app.getPath("userData");
-    await BackupService.applyPendingRestore(databasePath, userDataDirectory);
+    try {
+      await BackupService.applyPendingRestore(databasePath, userDataDirectory);
+    } catch (error) {
+      const choice = await dialog.showMessageBox({
+        type: "warning",
+        title: "Pending database restore could not be applied",
+        message: "The pending database restore failed. Choose how to handle the restore request before continuing.",
+        detail: error instanceof Error ? error.message : "Unknown restore error.",
+        buttons: [
+          "Move Restore Request Aside and Continue",
+          "Discard Restore Request and Continue",
+          "Quit",
+        ],
+        defaultId: 0,
+        cancelId: 2,
+        noLink: true,
+      });
+      if (choice.response === 2) {
+        app.quit();
+        return;
+      }
+      try {
+        if (choice.response === 0) {
+          await BackupService.movePendingRestoreAside(userDataDirectory);
+        } else {
+          await BackupService.discardPendingRestore(userDataDirectory);
+        }
+      } catch (resolutionError) {
+        await dialog.showMessageBox({
+          type: "error",
+          title: "Pending restore request could not be resolved",
+          message: "Greige Fabric POS will not continue until the restore request is moved or discarded.",
+          detail: resolutionError instanceof Error ? resolutionError.message : "Unknown error.",
+        });
+        app.quit();
+        return;
+      }
+    }
     const migrationsPath = app.isPackaged
       ? path.join(process.resourcesPath, "migrations")
       : path.join(app.getAppPath(), "database", "migrations");

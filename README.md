@@ -73,6 +73,8 @@ Electron. Use `npm run dev:web` for the renderer alone, or start the renderer
 first and then run `npm run dev:electron`.
 
 See [PROJECT-COMMANDS.md](./PROJECT-COMMANDS.md) for all available commands.
+For packaged application installation on Windows, macOS, or Linux, see
+[INSTALLING.md](./INSTALLING.md).
 
 ## Data storage
 
