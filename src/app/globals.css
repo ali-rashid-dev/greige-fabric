@@ -2029,6 +2029,10 @@ td {
   font-size: 19px;
 }
 
+.ledger-document-heading {
+  display: none;
+}
+
 .print-invoice-heading strong {
   font-size: 11px;
 }
@@ -2350,6 +2354,38 @@ td {
 }
 
 @media print {
+  .no-print {
+    display: none !important;
+  }
+
+  @page {
+    margin: 12mm;
+  }
+
+  html,
+  body {
+    background: white !important;
+  }
+
+  .document-print-actions {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .document-print-actions select {
+    min-height: 36px;
+    border: 1px solid #cbd4cc;
+    border-radius: 7px;
+    padding: 0 8px;
+    background: white;
+  }
+
+  .print-error {
+    color: #a33b2c;
+    font-size: 12px;
+  }
+
   .app-shell:has(.payment-printable) > .sidebar,
   .app-shell:has(.payment-printable) > .main-content,
   .app-shell:has(.payment-printable) > :not(.modal-backdrop),
@@ -2387,10 +2423,13 @@ td {
   }
 
   .app-shell:has(.invoice-printable) > .sidebar,
+  .app-shell:has(.invoice-printable) > .main-content > .topbar,
   .app-shell:has(.invoice-printable) .main-content > .topbar,
   .app-shell:has(.invoice-printable) .content-scroll > :not(.pos-page),
   .app-shell:has(.invoice-printable) .pos-page > :not(.pos-invoice-backdrop),
   .app-shell:has(.invoice-printable) .pos-invoice-modal > .modal-header,
+  .app-shell:has(.invoice-printable) .modal-backdrop:not(:has(.invoice-printable)),
+  .app-shell:has(.invoice-printable) .modal > .modal-header,
   .app-shell:has(.invoice-printable) .no-print {
     display: none !important;
   }
@@ -2435,6 +2474,116 @@ td {
 
   .app-shell:has(.invoice-printable) .invoice-printable {
     padding: 0;
+  }
+
+  .app-shell:has(.invoice-printable) .modal {
+    width: 100%;
+    max-width: none;
+    max-height: none;
+    overflow: visible;
+    border: 0;
+    box-shadow: none;
+  }
+
+  .app-shell:has(.invoice-printable) .modal-content {
+    padding: 0;
+  }
+
+  .print-authorized {
+    margin-top: 34px;
+    text-align: right;
+    color: #56645a;
+    font-size: 9px;
+  }
+
+  .print-invoice-heading small,
+  .payment-printable > header small,
+  .statement-document-heading p {
+    color: #78847b;
+    font-size: 9px;
+  }
+
+  .print-customer {
+    display: grid;
+    gap: 3px;
+  }
+
+  .purchase-voucher-lines {
+    margin: 18px 0;
+    border-top: 1px solid #e8ece8;
+  }
+
+  .purchase-voucher-lines > div {
+    display: grid;
+    grid-template-columns: minmax(160px, 1fr) 85px 100px 100px;
+    gap: 8px;
+    padding: 9px 0;
+    border-bottom: 1px solid #edf0ec;
+    font-size: 9px;
+  }
+
+  .purchase-voucher-lines > div > :last-child {
+    text-align: right;
+  }
+
+  .purchase-voucher-lines span small {
+    display: block;
+    color: #78847b;
+  }
+
+  .statement-document-heading {
+    display: grid;
+    gap: 5px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid #dfe5df;
+  }
+
+  .statement-document-heading h2,
+  .statement-document-heading p {
+    margin: 0;
+  }
+
+  .statement-document-heading span {
+    font-size: 10px;
+  }
+
+  .app-shell:has(.statement-printable) > .sidebar,
+  .app-shell:has(.statement-printable) > .main-content > .topbar,
+  .app-shell:has(.statement-printable) .modal-backdrop:not(:has(.statement-printable)),
+  .app-shell:has(.statement-printable) .modal-header,
+  .app-shell:has(.statement-printable) .modal-content > :not(.supplier-statement-print),
+  .app-shell:has(.statement-printable) .supplier-statement-print > .section-heading {
+    display: none !important;
+  }
+
+  .app-shell:has(.statement-printable) .modal,
+  .app-shell:has(.statement-printable) .modal-content {
+    width: 100%;
+    max-width: none;
+    max-height: none;
+    overflow: visible;
+    padding: 0;
+    border: 0;
+    box-shadow: none;
+    background: white;
+  }
+
+  .app-shell:has(.ledger-printable) > .sidebar,
+  .app-shell:has(.ledger-printable) > .main-content > .topbar,
+  .app-shell:has(.ledger-printable) .content-scroll > :not(.expenses-page),
+  .app-shell:has(.ledger-printable) .expenses-page > :not(.ledger-printable),
+  .app-shell:has(.ledger-printable) .ledger-printable .panel-heading .document-print-actions {
+    display: none !important;
+  }
+
+  .app-shell:has(.ledger-printable) .ledger-printable {
+    border: 0;
+    box-shadow: none;
+    padding: 0;
+  }
+
+  .ledger-document-heading {
+    display: block;
   }
 
   body.print-customer-statement {

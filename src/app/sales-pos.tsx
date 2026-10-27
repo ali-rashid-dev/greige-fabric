@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import { businessConfig } from "@/config/business";
+import PrintActions from "./print-actions";
 import { getDesktopApi } from "@/lib/desktop-api";
 import type { Customer, Fabric, Invoice } from "@/shared/types";
 
@@ -381,10 +382,18 @@ export default function SalesPos({ customers, onPosted }: SalesPosProps) {
             <div className="modal-content">
               <article className="invoice-printable">
                 <header className="print-invoice-heading">
-                  <div><p>{businessConfig.name}</p><h2>Sales invoice</h2></div>
+                  <div>
+                    <p>{businessConfig.name}</p>
+                    <small>{businessConfig.contactInformation} · {businessConfig.address}</small>
+                    <h2>Sales invoice</h2>
+                  </div>
                   <div><strong>{invoice.invoiceNumber}</strong><span>{new Intl.DateTimeFormat("en-PK", { dateStyle: "medium", timeStyle: "short" }).format(new Date(invoice.createdAt))}</span></div>
                 </header>
-                <p className="print-customer">{invoice.customerName ? `${invoice.customerCode} · ${invoice.customerName}` : "Walk-in customer"}</p>
+                <div className="print-customer">
+                  <strong>{invoice.customerName ? `${invoice.customerCode} · ${invoice.customerName}` : "Walk-in customer"}</strong>
+                  {invoice.customerPhone && <span>{invoice.customerPhone}</span>}
+                  {invoice.customerAddress && <span>{invoice.customerAddress}</span>}
+                </div>
                 <div className="print-invoice-lines">
                   <div className="print-line print-line-head"><span>Fabric</span><span>Quantity</span><span>Rate</span><span>Amount</span></div>
                   {invoice.items.map((item) => (
@@ -402,12 +411,14 @@ export default function SalesPos({ customers, onPosted }: SalesPosProps) {
                   <div className="print-grand-total"><span>Total</span><strong>{formatMoney(invoice.totalMinor)}</strong></div>
                   <div><span>Received ({invoice.paymentAccount})</span><strong>{formatMoney(invoice.amountReceivedMinor)}</strong></div>
                   <div><span>Credit balance</span><strong>{formatMoney(invoice.dueMinor)}</strong></div>
+                  <div><span>Payment terms</span><strong>{invoice.paymentTermsDays === undefined || invoice.paymentTermsDays === 0 ? "Due on receipt" : `${invoice.paymentTermsDays} days`}</strong></div>
                 </div>
                 <p className="print-thank-you">Thank you for your business.</p>
+                <p className="print-authorized">{businessConfig.authorizedFooter}</p>
               </article>
               <div className="modal-actions no-print">
                 <button className="secondary-button" onClick={() => setInvoice(null)}>Close</button>
-                <button className="primary-button" onClick={() => window.print()}>Print invoice</button>
+                <PrintActions label="Print invoice" />
               </div>
             </div>
           </section>

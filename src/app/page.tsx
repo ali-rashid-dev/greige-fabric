@@ -5,6 +5,7 @@ import type { FormEvent } from "react";
 import { businessConfig } from "@/config/business";
 import { getDesktopApi } from "@/lib/desktop-api";
 import { fabricInputSchema } from "@/shared/contracts";
+import PrintActions from "./print-actions";
 import SalesPos from "./sales-pos";
 import ExpensesManagement from "./expenses-management";
 import type {
@@ -22,6 +23,7 @@ import type {
   Supplier,
   SupplierDetails,
   SupplierPayment,
+  SupplierPurchase,
   SupplierStatement,
 } from "@/shared/types";
 
@@ -165,6 +167,7 @@ export default function Home() {
     purchaseId: "",
   });
   const [paymentPreview, setPaymentPreview] = useState<SupplierPayment | null>(null);
+  const [purchasePreview, setPurchasePreview] = useState<SupplierPurchase | null>(null);
   const [supplierAdjustmentOpen, setSupplierAdjustmentOpen] = useState(false);
   const [supplierAdjustmentValues, setSupplierAdjustmentValues] = useState({
     direction: "increase" as "increase" | "decrease",
@@ -206,6 +209,7 @@ export default function Home() {
     note: "",
   });
   const [receiptPreview, setReceiptPreview] = useState<CustomerReceipt | null>(null);
+  const [invoicePreview, setInvoicePreview] = useState<Invoice | null>(null);
   const [paymentAccounts, setPaymentAccounts] = useState<PaymentAccount[]>([]);
   const [customerStatement, setCustomerStatement] = useState<CustomerStatement | null>(null);
   const [customerStatementDates, setCustomerStatementDates] = useState({
@@ -1088,6 +1092,7 @@ export default function Home() {
                 onEdit={() => openCustomerForm(customerDetails.customer)}
                 onReverseReceipt={(receipt) => void reverseCustomerReceipt(receipt)}
                 onPrintReceipt={(receipt) => setReceiptPreview(receipt)}
+                onPrintInvoice={(invoice) => setInvoicePreview(invoice)}
                 onReceive={() => {
                   setReceiptValues({
                     amount: "",
@@ -1105,11 +1110,6 @@ export default function Home() {
                   setCustomerStatement(null);
                 }}
                 onStatementSubmit={(event) => void loadCustomerStatement(event)}
-                onPrintStatement={() => {
-                  document.body.classList.add("print-customer-statement");
-                  window.addEventListener("afterprint", () => document.body.classList.remove("print-customer-statement"), { once: true });
-                  window.print();
-                }}
               />
             ) : (
               <>
@@ -1143,7 +1143,7 @@ export default function Home() {
                 <EmptyState title="No invoices yet" copy="Start a new sale to build your sales history." />
               ) : (
                 <div className="invoice-list">
-                  {invoices.map((invoice) => <InvoiceCard key={invoice.id} invoice={invoice} />)}
+                  {invoices.map((invoice) => <InvoiceCard key={invoice.id} invoice={invoice} onPrint={setInvoicePreview} />)}
                 </div>
               )}
             </>
@@ -1196,33 +1196,108 @@ export default function Home() {
       {receiptPreview && customerDetails && (
         <Modal title="Receipt preview" onClose={() => setReceiptPreview(null)}>
           <article className="payment-printable">
-            <header><span>{businessConfig.name}</span><h2>Customer receipt</h2></header>
+            <header><span>{businessConfig.name}</span><small>{businessConfig.contactInformation} · {businessConfig.address}</small><h2>Customer receipt</h2></header>
             <div className="payment-document-row"><span>Receipt</span><strong>{receiptPreview.receiptNumber}</strong></div>
             <div className="payment-document-row"><span>Date</span><strong>{formatDate(receiptPreview.createdAt)}</strong></div>
             <div className="payment-document-row"><span>Received from</span><strong>{customerDetails.customer.name} ({customerDetails.customer.code})</strong></div>
+            <div className="payment-document-row"><span>Customer contact</span><strong>{customerDetails.customer.phone}{customerDetails.customer.address ? ` · ${customerDetails.customer.address}` : ""}</strong></div>
             <div className="payment-document-row"><span>Payment method</span><strong>{receiptPreview.paymentMethod}</strong></div>
             <div className="payment-document-row"><span>Applied to</span><strong>{receiptPreview.invoiceNumber ?? "Advance payment"}</strong></div>
             <div className="payment-document-row"><span>Reference / note</span><strong>{receiptPreview.reference || receiptPreview.note || "—"}</strong></div>
             <div className="payment-document-total"><span>Amount received</span><strong>{formatMoney(receiptPreview.amountMinor)}</strong></div>
             {receiptPreview.reversedAt && <p className="payment-reversed-note">Reversed: {receiptPreview.reversalReason}</p>}
+            <p className="print-authorized">{businessConfig.authorizedFooter}</p>
           </article>
-          <div className="modal-actions no-print"><button className="secondary-button" onClick={() => setReceiptPreview(null)}>Close</button><button className="primary-button" onClick={() => window.print()}>Print receipt</button></div>
+          <div className="modal-actions no-print"><button className="secondary-button" onClick={() => setReceiptPreview(null)}>Close</button><PrintActions label="Print receipt" /></div>
         </Modal>
       )}
 
       {paymentPreview && supplierDetails && (
         <Modal title="Payment voucher preview" onClose={() => setPaymentPreview(null)}>
           <article className="payment-printable">
-            <header><span>{businessConfig.name}</span><h2>Supplier payment voucher</h2></header>
+            <header><span>{businessConfig.name}</span><small>{businessConfig.contactInformation} · {businessConfig.address}</small><h2>Supplier payment voucher</h2></header>
             <div className="payment-document-row"><span>Voucher</span><strong>{paymentPreview.paymentNumber}</strong></div>
             <div className="payment-document-row"><span>Date</span><strong>{formatDate(paymentPreview.createdAt)}</strong></div>
             <div className="payment-document-row"><span>Paid to</span><strong>{supplierDetails.supplier.name} ({supplierDetails.supplier.code})</strong></div>
+            <div className="payment-document-row"><span>Supplier contact</span><strong>{supplierDetails.supplier.phone}{supplierDetails.supplier.address ? ` · ${supplierDetails.supplier.address}` : ""}</strong></div>
             <div className="payment-document-row"><span>Payment method</span><strong>{paymentPreview.paymentMethod}</strong></div>
             <div className="payment-document-row"><span>Reference / note</span><strong>{paymentPreview.reference || paymentPreview.note || "—"}</strong></div>
             <div className="payment-document-total"><span>Amount paid</span><strong>{formatMoney(paymentPreview.amountMinor)}</strong></div>
             {paymentPreview.reversedAt && <p className="payment-reversed-note">Reversed: {paymentPreview.reversalReason}</p>}
+            <p className="print-authorized">{businessConfig.authorizedFooter}</p>
           </article>
-          <div className="modal-actions no-print"><button className="secondary-button" onClick={() => setPaymentPreview(null)}>Close</button><button className="primary-button" onClick={() => window.print()}>Print voucher</button></div>
+          <div className="modal-actions no-print"><button className="secondary-button" onClick={() => setPaymentPreview(null)}>Close</button><PrintActions label="Print voucher" /></div>
+        </Modal>
+      )}
+
+      {invoicePreview && (
+        <Modal title="Sales invoice preview" onClose={() => setInvoicePreview(null)} wide>
+          <article className="invoice-printable">
+            <header className="print-invoice-heading">
+              <div><p>{businessConfig.name}</p><small>{businessConfig.contactInformation} · {businessConfig.address}</small><h2>Sales invoice</h2></div>
+              <div><strong>{invoicePreview.invoiceNumber}</strong><span>{formatDate(invoicePreview.createdAt)}</span></div>
+            </header>
+            <div className="print-customer">
+              <strong>{invoicePreview.customerName ? `${invoicePreview.customerCode} · ${invoicePreview.customerName}` : "Walk-in customer"}</strong>
+              {invoicePreview.customerPhone && <span>{invoicePreview.customerPhone}</span>}
+              {invoicePreview.customerAddress && <span>{invoicePreview.customerAddress}</span>}
+            </div>
+            <div className="print-invoice-lines">
+              <div className="print-line print-line-head"><span>Fabric</span><span>Quantity</span><span>Rate</span><span>Amount</span></div>
+              {invoicePreview.items.map((item) => <div className="print-line" key={item.id}>
+                <span><strong>{item.name}</strong><small>{item.sku}</small></span>
+                <span>{formatMeters(item.quantityMm)}</span>
+                <span>{formatMoney(item.unitPriceMinor)} / m</span>
+                <strong>{formatMoney(item.lineTotalMinor)}</strong>
+              </div>)}
+            </div>
+            <div className="print-invoice-totals">
+              <div><span>Subtotal</span><strong>{formatMoney(invoicePreview.subtotalMinor)}</strong></div>
+              <div><span>Discount</span><strong>{formatMoney(invoicePreview.discountMinor)}</strong></div>
+              <div className="print-grand-total"><span>Total</span><strong>{formatMoney(invoicePreview.totalMinor)}</strong></div>
+              <div><span>Received ({invoicePreview.paymentAccount})</span><strong>{formatMoney(invoicePreview.amountReceivedMinor)}</strong></div>
+              <div><span>Balance due</span><strong>{formatMoney(invoicePreview.dueMinor)}</strong></div>
+              <div><span>Payment terms</span><strong>{invoicePreview.paymentTermsDays === undefined || invoicePreview.paymentTermsDays === 0 ? "Due on receipt" : `${invoicePreview.paymentTermsDays} days`}</strong></div>
+            </div>
+            <p className="print-thank-you">Thank you for your business.</p>
+            <p className="print-authorized">{businessConfig.authorizedFooter}</p>
+          </article>
+          <div className="modal-actions no-print"><button className="secondary-button" onClick={() => setInvoicePreview(null)}>Close</button><PrintActions label="Print invoice" /></div>
+        </Modal>
+      )}
+
+      {purchasePreview && supplierDetails && (
+        <Modal title="Purchase voucher preview" onClose={() => setPurchasePreview(null)}>
+          <article className="payment-printable purchase-voucher-printable">
+            <header>
+              <span>{businessConfig.name}</span>
+              <small>{businessConfig.contactInformation} · {businessConfig.address}</small>
+              <h2>Purchase voucher</h2>
+            </header>
+            <div className="payment-document-row"><span>Supplier bill</span><strong>{purchasePreview.billNumber}</strong></div>
+            <div className="payment-document-row"><span>Purchase date</span><strong>{purchasePreview.purchaseDate}</strong></div>
+            <div className="payment-document-row"><span>Supplier</span><strong>{supplierDetails.supplier.name} ({supplierDetails.supplier.code})</strong></div>
+            <div className="payment-document-row"><span>Contact</span><strong>{supplierDetails.supplier.phone}{supplierDetails.supplier.address ? ` · ${supplierDetails.supplier.address}` : ""}</strong></div>
+            <div className="purchase-voucher-lines">
+              <div><strong>Fabric / SKU</strong><strong>Quantity</strong><strong>Rate</strong><strong>Line total</strong></div>
+              {purchasePreview.items.map((item) => (
+                <div key={item.id}>
+                  <span>{item.fabricName}<small>{item.sku}</small></span>
+                  <span>{formatMeters(item.quantityMm)}</span>
+                  <span>{formatMoney(item.unitCostMinor)}</span>
+                  <strong>{formatMoney(item.lineTotalMinor - item.allocatedCostMinor)}</strong>
+                </div>
+              ))}
+            </div>
+            {purchasePreview.additionalCostsMinor > 0 && (
+              <div className="payment-document-row"><span>Additional costs {purchasePreview.additionalCostsDescription}</span><strong>{formatMoney(purchasePreview.additionalCostsMinor)}</strong></div>
+            )}
+            <div className="payment-document-total"><span>Total purchase</span><strong>{formatMoney(purchasePreview.totalMinor)}</strong></div>
+            <div className="payment-document-row"><span>Paid ({purchasePreview.paymentMode})</span><strong>{formatMoney(purchasePreview.paidMinor)}</strong></div>
+            <div className="payment-document-row"><span>Balance due</span><strong>{formatMoney(purchasePreview.dueMinor)}</strong></div>
+            <p className="print-authorized">{businessConfig.authorizedFooter}</p>
+          </article>
+          <div className="modal-actions no-print"><button className="secondary-button" onClick={() => setPurchasePreview(null)}>Close</button><PrintActions label="Print voucher" /></div>
         </Modal>
       )}
 
@@ -1409,10 +1484,22 @@ export default function Home() {
             <FormField label="To"><input type="date" required value={statementDates.to} onChange={(event) => setStatementDates({ ...statementDates, to: event.target.value })} /></FormField>
             <button className="primary-button">Generate statement</button>
           </form>
-          {statement && <StatementTable statement={statement} />}
+          {statement && (
+            <div className="supplier-statement-print">
+              <div className="section-heading compact"><div><h3>Supplier statement</h3></div><PrintActions label="Print statement" beforePrint={() => {
+                document.body.classList.add("print-supplier-statement");
+                return () => document.body.classList.remove("print-supplier-statement");
+              }} /></div>
+              <StatementTable
+                statement={statement}
+                partyLabel={`Supplier: ${supplierDetails.supplier.name} (${supplierDetails.supplier.code})`}
+                partyDetails={`${supplierDetails.supplier.phone}${supplierDetails.supplier.address ? ` · ${supplierDetails.supplier.address}` : ""}`}
+              />
+            </div>
+          )}
           <div className="history-block">
             <div className="section-heading compact"><div><h3>Purchase history</h3><p>Supplier receipts update inventory and AP in the same transaction.</p></div></div>
-            {supplierDetails.purchases.length === 0 ? <p className="muted-message">No purchases recorded.</p> : supplierDetails.purchases.map((purchase) => <div className="history-row" key={purchase.id}><div><strong>{purchase.billNumber} · {purchase.purchaseDate}</strong><span>{purchase.reference || purchase.paymentMode.toUpperCase()} · {purchase.items.map((item) => `${item.sku} ${formatMeters(item.quantityMm)}`).join(", ")}{purchase.additionalCostsMinor > 0 ? ` · Acquisition costs ${formatMoney(purchase.additionalCostsMinor)}` : ""}</span></div><div className="history-price"><strong>{formatMoney(purchase.totalMinor)}</strong><span>Paid {formatMoney(purchase.paidMinor)} · Due {formatMoney(purchase.dueMinor)}</span></div></div>)}
+            {supplierDetails.purchases.length === 0 ? <p className="muted-message">No purchases recorded.</p> : supplierDetails.purchases.map((purchase) => <div className="history-row" key={purchase.id}><div><strong>{purchase.billNumber} · {purchase.purchaseDate}</strong><span>{purchase.reference || purchase.paymentMode.toUpperCase()} · {purchase.items.map((item) => `${item.sku} ${formatMeters(item.quantityMm)}`).join(", ")}{purchase.additionalCostsMinor > 0 ? ` · Acquisition costs ${formatMoney(purchase.additionalCostsMinor)}` : ""}</span></div><div className="history-price"><strong>{formatMoney(purchase.totalMinor)}</strong><span>Paid {formatMoney(purchase.paidMinor)} · Due {formatMoney(purchase.dueMinor)}</span><button type="button" className="table-action" onClick={() => setPurchasePreview(purchase)}>Print voucher</button></div></div>)}
             <div className="section-heading compact"><div><h3>Payment vouchers</h3><p>Payments use configured payment accounts and support invoice-level partial settlement.</p></div></div>
             {supplierDetails.payments.length === 0 ? <p className="muted-message">No payments recorded.</p> : supplierDetails.payments.map((payment) => <div className="history-row" key={payment.id}><div><strong>{payment.paymentNumber}{payment.reversedAt ? " · REVERSED" : ""}</strong><span>{formatDate(payment.createdAt)} · {payment.paymentMethod}{payment.reference ? ` · ${payment.reference}` : ""}{payment.note ? ` · ${payment.note}` : ""}{payment.reversalReason ? ` · Reversal: ${payment.reversalReason}` : ""}</span></div><div className="history-price"><strong>{formatMoney(payment.amountMinor)}</strong><div className="payment-history-actions"><button type="button" className="table-action" onClick={() => setPaymentPreview(payment)}>Print voucher</button>{!payment.reversedAt && <button type="button" className="table-action danger" disabled={saving} onClick={() => void reverseSupplierPayment(payment)}>Reverse</button>}</div></div></div>)}
           </div>
@@ -1612,11 +1699,11 @@ function CustomerDetailPage({
   onReceive,
   onReverseReceipt,
   onPrintReceipt,
+  onPrintInvoice,
   statement,
   statementDates,
   onStatementDatesChange,
   onStatementSubmit,
-  onPrintStatement,
 }: {
   details: CustomerDetails;
   tab: CustomerTab;
@@ -1625,11 +1712,11 @@ function CustomerDetailPage({
   onReceive: () => void;
   onReverseReceipt: (receipt: CustomerReceipt) => void;
   onPrintReceipt: (receipt: CustomerReceipt) => void;
+  onPrintInvoice: (invoice: Invoice) => void;
   statement: CustomerStatement | null;
   statementDates: { from: string; to: string };
   onStatementDatesChange: (dates: { from: string; to: string }) => void;
   onStatementSubmit: (event: FormEvent<HTMLFormElement>) => void;
-  onPrintStatement: () => void;
 }) {
   const { customer } = details;
   const availableCreditMinor = Math.max(0, customer.creditLimitMinor - customer.outstandingMinor);
@@ -1680,7 +1767,7 @@ function CustomerDetailPage({
       {tab === "sales" && (
         <div className="customer-tab-content">
           <div className="section-heading"><div><h2>Sales history</h2><p>Invoice totals and line prices are preserved as recorded.</p></div><span className="history-count">{details.sales.length} invoices</span></div>
-          {details.sales.length === 0 ? <EmptyState title="No sales recorded" copy="Credit invoices for this customer will appear here." /> : <div className="invoice-list">{details.sales.map((invoice) => <InvoiceCard key={invoice.id} invoice={invoice} />)}</div>}
+          {details.sales.length === 0 ? <EmptyState title="No sales recorded" copy="Credit invoices for this customer will appear here." /> : <div className="invoice-list">{details.sales.map((invoice) => <InvoiceCard key={invoice.id} invoice={invoice} onPrint={onPrintInvoice} />)}</div>}
         </div>
       )}
       {tab === "payments" && (
@@ -1703,27 +1790,45 @@ function CustomerDetailPage({
       {tab === "ledger" && (
         <div className="customer-statement-print">
           <div className="section-heading"><div><h2>Customer ledger statement</h2><p>Opening and closing balances are calculated from customer-linked AR postings.</p></div>
-            <button className="secondary-button" disabled={!statement} onClick={onPrintStatement}>Print statement</button>
+            {statement && <PrintActions label="Print statement" beforePrint={() => {
+              document.body.classList.add("print-customer-statement");
+              return () => document.body.classList.remove("print-customer-statement");
+            }} />}
           </div>
-          {statement && <div className="statement-print-heading">
-            <strong>{customer.name} ({customer.code})</strong>
-            <span>Statement period: {statement.from} to {statement.to}</span>
-          </div>}
           <form className="statement-filter" onSubmit={(event) => onStatementSubmit(event)}>
             <FormField label="From"><input type="date" required value={statementDates.from} onChange={(event) => onStatementDatesChange({ ...statementDates, from: event.target.value })} /></FormField>
             <FormField label="To"><input type="date" required value={statementDates.to} onChange={(event) => onStatementDatesChange({ ...statementDates, to: event.target.value })} /></FormField>
             <button className="primary-button">Generate statement</button>
           </form>
-          {statement ? <StatementTable statement={statement} /> : <p className="muted-message">Choose a date range to generate the customer ledger.</p>}
+          {statement ? <StatementTable
+            statement={statement}
+            partyLabel={`Customer: ${customer.name} (${customer.code})`}
+            partyDetails={`${customer.phone}${customer.address ? ` · ${customer.address}` : ""}`}
+          /> : <p className="muted-message">Choose a date range to generate the customer ledger.</p>}
         </div>
       )}
     </div>
   );
 }
 
-function StatementTable({ statement }: { statement: SupplierStatement | CustomerStatement }) {
+function StatementTable({
+  statement,
+  partyLabel,
+  partyDetails,
+}: {
+  statement: SupplierStatement | CustomerStatement;
+  partyLabel: string;
+  partyDetails: string;
+}) {
   return (
-    <div className="statement-panel">
+    <div className="statement-panel statement-printable">
+      <header className="statement-document-heading">
+        <h2>{businessConfig.name}</h2>
+        <p>{businessConfig.contactInformation} · {businessConfig.address}</p>
+        <strong>{partyLabel}</strong>
+        {partyDetails && <span>{partyDetails}</span>}
+        <span>Statement period: {statement.from} to {statement.to}</span>
+      </header>
       <div className="statement-balances">
         <Metric label="Opening balance" value={formatMoney(statement.openingBalanceMinor)} />
         <Metric label="Closing balance" value={formatMoney(statement.closingBalanceMinor)} />
@@ -1743,6 +1848,7 @@ function StatementTable({ statement }: { statement: SupplierStatement | Customer
           </table>
         </div>
       )}
+      <p className="print-authorized">{businessConfig.authorizedFooter}</p>
     </div>
   );
 }
@@ -1751,7 +1857,7 @@ function StatusBadge({ active, low = false }: { active: boolean; low?: boolean }
   return <span className={active ? low ? "status-badge low" : "status-badge active" : "status-badge inactive"}><span />{active ? low ? "Low stock" : "Active" : "Inactive"}</span>;
 }
 
-function InvoiceCard({ invoice }: { invoice: Invoice }) {
+function InvoiceCard({ invoice, onPrint }: { invoice: Invoice; onPrint: (invoice: Invoice) => void }) {
   return (
     <article className="invoice-card">
       <header><div><strong>{invoice.invoiceNumber}</strong><span>{formatDate(invoice.createdAt)}{invoice.customerName ? ` · ${invoice.customerCode} ${invoice.customerName}` : " · Walk-in customer"}</span></div><strong className="invoice-total">{formatMoney(invoice.totalMinor)}</strong></header>
@@ -1762,6 +1868,7 @@ function InvoiceCard({ invoice }: { invoice: Invoice }) {
         <span>Received ({invoice.paymentAccount}) <strong>{formatMoney(invoice.amountReceivedMinor)}</strong></span>
         <span>Credit balance <strong>{formatMoney(invoice.dueMinor)}</strong></span>
       </footer>
+      <button className="table-action no-print" onClick={() => onPrint(invoice)}>Preview / print invoice</button>
     </article>
   );
 }

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { businessConfig } from "@/config/business";
 import { getDesktopApi } from "@/lib/desktop-api";
+import PrintActions from "./print-actions";
 import type { IpcResult } from "@/shared/contracts";
 import type {
   AccountingPeriod,
@@ -10,10 +11,11 @@ import type {
   ExpenseCategory,
   ExpenseReport,
   GeneralLedger,
+  ChartOfAccount,
   PaymentAccount,
 } from "@/shared/types";
 
-type ExpenseView = "add" | "history" | "cashbook" | "bankbook" | "daily" | "report";
+type ExpenseView = "add" | "history" | "cashbook" | "bankbook" | "ledger" | "daily" | "report";
 
 function localDate(): string {
   const date = new Date();
@@ -36,6 +38,7 @@ const views: Array<{ key: ExpenseView; label: string }> = [
   { key: "history", label: "Expense history" },
   { key: "cashbook", label: "Cashbook" },
   { key: "bankbook", label: "Bankbook" },
+  { key: "ledger", label: "Account ledger" },
   { key: "daily", label: "Daily cash summary" },
   { key: "report", label: "Expense report" },
 ];
@@ -54,6 +57,9 @@ export default function ExpensesManagement() {
   const [report, setReport] = useState<ExpenseReport | null>(null);
   const [cashbook, setCashbook] = useState<GeneralLedger | null>(null);
   const [bankbook, setBankbook] = useState<GeneralLedger | null>(null);
+  const [accountLedger, setAccountLedger] = useState<GeneralLedger | null>(null);
+  const [ledgerAccounts, setLedgerAccounts] = useState<ChartOfAccount[]>([]);
+  const [ledgerAccountCode, setLedgerAccountCode] = useState("1000");
   const [periods, setPeriods] = useState<AccountingPeriod[]>([]);
   const [expenseDate, setExpenseDate] = useState(today);
   const [range, setRange] = useState({ from: today, to: today });
@@ -71,7 +77,8 @@ export default function ExpensesManagement() {
   const [notice, setNotice] = useState("");
 
   const loadData = useCallback(async () => {
-    const [categoryResult, accountResult, expenseResult, reportResult, cashResult, bankResult, periodResult] =
+    const [categoryResult, accountResult, expenseResult, reportResult, cashResult, bankResult, periodResult,
+      ledgerAccountsResult, ledgerResult] =
       await Promise.all([
         getDesktopApi().expenses.categories(),
         getDesktopApi().customers.paymentAccounts(),
@@ -80,6 +87,12 @@ export default function ExpensesManagement() {
         getDesktopApi().accounting.generalLedger({ accountCode: "1000", from: range.from, to: range.to }),
         getDesktopApi().accounting.generalLedger({ accountCode: "1010", from: range.from, to: range.to }),
         getDesktopApi().accounting.periods(),
+        getDesktopApi().accounting.accounts(),
+        getDesktopApi().accounting.generalLedger({
+          accountCode: ledgerAccountCode,
+          from: range.from,
+          to: range.to,
+        }),
       ]);
     const categoryData = resultData(categoryResult);
     const accountData = resultData(accountResult);
@@ -90,9 +103,15 @@ export default function ExpensesManagement() {
     setCashbook(resultData(cashResult));
     setBankbook(resultData(bankResult));
     setPeriods(resultData(periodResult));
+    const chartOfAccounts = resultData(ledgerAccountsResult);
+    setLedgerAccounts(chartOfAccounts);
+    setAccountLedger(resultData(ledgerResult));
+    setLedgerAccountCode((current) =>
+      chartOfAccounts.some((account) => account.code === current) ? current : chartOfAccounts[0]?.code ?? "",
+    );
     setCategoryCode((current) => current || categoryData[0]?.code || "");
     setPaymentAccountCode((current) => current || accountData[0]?.code || "");
-  }, [range]);
+  }, [range, ledgerAccountCode]);
 
   useEffect(() => {
     let active = true;
@@ -163,7 +182,13 @@ export default function ExpensesManagement() {
     }
   }
 
-  const displayedLedger = view === "cashbook" ? cashbook : view === "bankbook" ? bankbook : null;
+  const displayedLedger = view === "cashbook"
+    ? cashbook
+    : view === "bankbook"
+      ? bankbook
+      : view === "ledger"
+        ? accountLedger
+        : null;
   const cashIn = (cashbook?.lines ?? []).reduce((sum, line) => sum + line.debitMinor, 0);
   const cashOut = (cashbook?.lines ?? []).reduce((sum, line) => sum + line.creditMinor, 0);
   return (
@@ -200,6 +225,12 @@ export default function ExpensesManagement() {
         }}>
           {view === "daily" ? (
             <label>Date <input type="date" value={dailyDate} onChange={(event) => setDailyDate(event.target.value)} /></label>
+          ) : view === "ledger" ? (
+            <label>Account
+              <select value={ledgerAccountCode} onChange={(event) => setLedgerAccountCode(event.target.value)}>
+                {ledgerAccounts.map((account) => <option key={account.code} value={account.code}>{account.code} · {account.name}</option>)}
+              </select>
+            </label>
           ) : (
             <>
               <label>From <input type="date" value={rangeInput.from} onChange={(event) => setRangeInput({ ...rangeInput, from: event.target.value })} /></label>
@@ -261,9 +292,15 @@ export default function ExpensesManagement() {
         </section>
       )}
 
-      {(view === "cashbook" || view === "bankbook") && displayedLedger && (
-        <section className="panel">
-          <header className="panel-heading"><div><h2>{view === "cashbook" ? "Cashbook" : "Bankbook"}</h2><p>{displayedLedger.account.name} · opening balance {formatMoney(displayedLedger.openingBalanceMinor)}</p></div></header>
+      {(view === "cashbook" || view === "bankbook" || view === "ledger") && displayedLedger && (
+        <section className="panel ledger-printable">
+          <div className="ledger-document-heading">
+            <strong>{businessConfig.name}</strong>
+            <span>{businessConfig.contactInformation} · {businessConfig.address}</span>
+            <span>{displayedLedger.account.code} · {displayedLedger.account.name}</span>
+            <span>{range.from} – {range.to}</span>
+          </div>
+          <header className="panel-heading"><div><h2>{view === "cashbook" ? "Cashbook" : view === "bankbook" ? "Bankbook" : "Account ledger"}</h2><p>{displayedLedger.account.code} · {displayedLedger.account.name} · opening balance {formatMoney(displayedLedger.openingBalanceMinor)}</p></div><PrintActions label="Print ledger" /></header>
           <div className="summary-grid"><SummaryCard label="Money in" value={formatMoney(displayedLedger.lines.reduce((sum, line) => sum + line.debitMinor, 0))} /><SummaryCard label="Money out" value={formatMoney(displayedLedger.lines.reduce((sum, line) => sum + line.creditMinor, 0))} /><SummaryCard label="Closing balance" value={formatMoney(displayedLedger.closingBalanceMinor)} /></div>
           <div className="table-scroll"><table><thead><tr><th>Date</th><th>Type</th><th>Reference</th><th className="numeric">In</th><th className="numeric">Out</th><th className="numeric">Balance</th></tr></thead>
             <tbody>{displayedLedger.lines.map((line, index) => <tr key={`${line.transactionId}-${index}`}><td>{formatDate(line.createdAt.slice(0, 10))}</td><td>{line.transactionType.replaceAll("_", " ")}</td><td>{line.reference}</td><td className="numeric">{line.debitMinor ? formatMoney(line.debitMinor) : "—"}</td><td className="numeric">{line.creditMinor ? formatMoney(line.creditMinor) : "—"}</td><td className="numeric">{formatMoney(line.balanceMinor)}</td></tr>)}</tbody>

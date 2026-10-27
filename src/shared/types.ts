@@ -17,6 +17,7 @@ import type {
   ExpenseCategoryInput,
   ExpenseInput,
   ExpenseRangeInput,
+  PrintDocumentInput,
   FabricFiltersInput,
   FabricIdInput,
   FabricInput,
@@ -77,6 +78,9 @@ export interface Invoice {
   customerId?: string;
   customerCode?: string;
   customerName?: string;
+  customerPhone?: string;
+  customerAddress?: string;
+  paymentTermsDays?: number;
   items: InvoiceItem[];
 }
 
@@ -402,6 +406,9 @@ export interface CustomerDetails {
 }
 
 export interface DesktopApi {
+  documents: {
+    print(input: PrintDocumentInput): Promise<IpcResult<{ printed: boolean }>>;
+  };
   fabrics: {
     list(filters?: FabricFiltersInput): Promise<IpcResult<Fabric[]>>;
     get(input: FabricIdInput): Promise<IpcResult<FabricDetails>>;

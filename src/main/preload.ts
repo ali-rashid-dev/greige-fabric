@@ -3,6 +3,9 @@ import { channels } from "../shared/channels";
 import type { DesktopApi } from "../shared/types";
 
 const api: DesktopApi = {
+  documents: {
+    print: (input) => ipcRenderer.invoke(channels.printDocument, input),
+  },
   fabrics: {
     list: (filters = {}) => ipcRenderer.invoke(channels.listFabrics, filters),
     get: (input) => ipcRenderer.invoke(channels.getFabric, input),

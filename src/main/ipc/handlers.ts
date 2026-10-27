@@ -15,6 +15,7 @@ import {
   expenseCategoryInputSchema,
   expenseInputSchema,
   expenseRangeSchema,
+  printDocumentSchema,
   customerInputSchema,
   customerListSchema,
   customerReceiptSchema,
@@ -101,6 +102,40 @@ export function registerIpcHandlers(
   developmentUrl: string | undefined,
   productionFileUrl: string,
 ): void {
+  ipcMain.handle(channels.printDocument, async (event, rawInput): Promise<IpcResult<{ printed: boolean }>> => {
+    const frame = event.senderFrame;
+    if (
+      !frame ||
+      !isTrustedSender(frame.url, frame === event.sender.mainFrame, developmentUrl, productionFileUrl)
+    ) {
+      return failure("VALIDATION", "Untrusted application frame.");
+    }
+    const parsed = printDocumentSchema.safeParse(rawInput);
+    if (!parsed.success) {
+      return failure("VALIDATION", parsed.error.issues[0]?.message ?? "Invalid print request.");
+    }
+    try {
+      return await new Promise((resolve) => {
+        event.sender.print({
+          silent: false,
+          printBackground: true,
+          pageSize: parsed.data.paperFormat,
+        }, (success, failureReason) => {
+          if (success) resolve({ ok: true, data: { printed: true } });
+          else if (failureReason === "Print job canceled") {
+            resolve({ ok: true, data: { printed: false } });
+          } else {
+            console.error("Document printing failed.", failureReason);
+            resolve(failure("INTERNAL", "The document could not be printed."));
+          }
+        });
+      });
+    } catch (error) {
+      console.error("Document printing failed.", error);
+      return failure("INTERNAL", "The document could not be printed.");
+    }
+  });
+
   registerHandler(
     channels.listFabrics, fabrics, developmentUrl, productionFileUrl,
     fabricFiltersSchema, (service, input) => service.list(input),

@@ -48,6 +48,9 @@ interface InvoiceRow {
   customer_id?: string | null;
   customer_code?: string | null;
   customer_name?: string | null;
+  customer_phone?: string | null;
+  customer_address?: string | null;
+  payment_terms_days?: number | null;
 }
 
 interface InvoiceItemRow {
@@ -106,6 +109,9 @@ function mapInvoice(row: InvoiceRow, items: InvoiceItem[]): Invoice {
     customerId: row.customer_id ?? undefined,
     customerCode: row.customer_code ?? undefined,
     customerName: row.customer_name ?? undefined,
+    customerPhone: row.customer_phone ?? undefined,
+    customerAddress: row.customer_address ?? undefined,
+    paymentTermsDays: row.payment_terms_days ?? undefined,
     items,
   };
 }
@@ -169,7 +175,9 @@ export class FabricService {
     const invoices = this.database.prepare(`
       SELECT DISTINCT i.id, i.invoice_number, i.total_minor, i.discount_minor,
              i.amount_received_minor, i.payment_account_code, i.created_at,
-             i.customer_id, c.code AS customer_code, c.name AS customer_name
+             i.customer_id, c.code AS customer_code, c.name AS customer_name,
+             c.phone AS customer_phone, c.address AS customer_address,
+             c.payment_terms_days
       FROM invoices i
       JOIN invoice_items item ON item.invoice_id = i.id
       LEFT JOIN customers c ON c.id = i.customer_id
@@ -269,14 +277,31 @@ export class FabricService {
     const datePart = createdAt.slice(0, 10).replaceAll("-", "");
     const invoiceNumber = `GF-${datePart}-${id.slice(0, 6).toUpperCase()}`;
     let totalMinor = 0;
-    let invoiceCustomer: { id: string; code: string; name: string; credit_limit_minor: number } | undefined;
+    let invoiceCustomer: {
+      id: string;
+      code: string;
+      name: string;
+      phone: string;
+      address: string;
+      payment_terms_days: number;
+      credit_limit_minor: number;
+    } | undefined;
     const invoiceItems: InvoiceItem[] = [];
 
     const create = this.database.transaction(() => {
       if (input.customerId) {
         invoiceCustomer = this.database.prepare(`
-          SELECT id, code, name, credit_limit_minor FROM customers WHERE id = ? AND active = 1
-        `).get(input.customerId) as { id: string; code: string; name: string; credit_limit_minor: number } | undefined;
+          SELECT id, code, name, phone, address, payment_terms_days, credit_limit_minor
+          FROM customers WHERE id = ? AND active = 1
+        `).get(input.customerId) as {
+          id: string;
+          code: string;
+          name: string;
+          phone: string;
+          address: string;
+          payment_terms_days: number;
+          credit_limit_minor: number;
+        } | undefined;
         if (!invoiceCustomer) throw new FabricServiceError("NOT_FOUND", "Active customer not found.");
       }
       const lines = input.items.map((item) => {
@@ -396,6 +421,9 @@ export class FabricService {
         customerId: invoiceCustomer.id,
         customerCode: invoiceCustomer.code,
         customerName: invoiceCustomer.name,
+        customerPhone: invoiceCustomer.phone,
+        customerAddress: invoiceCustomer.address,
+        paymentTermsDays: invoiceCustomer.payment_terms_days,
       } : {}),
       items: invoiceItems,
     };
@@ -405,7 +433,9 @@ export class FabricService {
     const rows = this.database.prepare(`
       SELECT i.id, i.invoice_number, i.total_minor, i.discount_minor,
              i.amount_received_minor, i.payment_account_code, i.created_at,
-             i.customer_id, c.code AS customer_code, c.name AS customer_name
+             i.customer_id, c.code AS customer_code, c.name AS customer_name,
+             c.phone AS customer_phone, c.address AS customer_address,
+             c.payment_terms_days
       FROM invoices i LEFT JOIN customers c ON c.id = i.customer_id
       ORDER BY i.created_at DESC
     `).all() as InvoiceRow[];

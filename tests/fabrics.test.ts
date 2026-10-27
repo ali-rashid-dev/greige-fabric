@@ -22,6 +22,7 @@ import {
   accountingEntryReversalSchema,
   accountingManualEntrySchema,
   accountingOpeningBalancesSchema,
+  printDocumentSchema,
 } from "../src/shared/contracts";
 
 const migrationsDirectory = path.resolve("database/migrations");
@@ -93,6 +94,11 @@ describe("fabric quality catalog", () => {
     }).success).toBe(false);
     expect(accountingClosePeriodSchema.safeParse({ id: "2026-10" }).success).toBe(false);
     expect(accountingClosePeriodSchema.safeParse({ id: "2026-10", ownerPin: "123456" }).success).toBe(true);
+  });
+
+  it("accepts supported document paper formats and rejects unsupported formats", () => {
+    expect(printDocumentSchema.parse({ paperFormat: "A4" })).toEqual({ paperFormat: "A4" });
+    expect(printDocumentSchema.safeParse({ paperFormat: "A3" }).success).toBe(false);
   });
 
   it("balances purchases, sales, receipts and expenses in accounting reports", async () => {
@@ -470,6 +476,13 @@ describe("fabric quality catalog", () => {
         name: "Greige Cotton Fabric",
         unitPriceMinor: 18000,
         lineTotalMinor: 45000,
+      });
+      expect(historicalInvoice).toMatchObject({
+        subtotalMinor: 45000,
+        discountMinor: 0,
+        totalMinor: 45000,
+        amountReceivedMinor: 0,
+        dueMinor: 45000,
       });
       expect(service.get(fabric.id).invoices[0].items[0].unitPriceMinor).toBe(18000);
     } finally {

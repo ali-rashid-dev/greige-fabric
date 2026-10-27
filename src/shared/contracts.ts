@@ -107,6 +107,10 @@ export const createInvoiceSchema = z.object({
   }
 });
 
+export const printDocumentSchema = z.object({
+  paperFormat: z.enum(["A4", "A5", "Letter", "Legal"]),
+});
+
 const supplierFields = {
   code: z.string().trim().min(1, "Supplier code is required").max(40)
     .transform((value) => value.toUpperCase()),
@@ -436,6 +440,7 @@ export type FabricIdInput = z.infer<typeof fabricIdSchema>;
 export type StockAdjustmentInput = z.infer<typeof stockAdjustmentSchema>;
 export type OpeningStockInput = z.infer<typeof openingStockSchema>;
 export type CreateInvoiceInput = z.infer<typeof createInvoiceSchema>;
+export type PrintDocumentInput = z.infer<typeof printDocumentSchema>;
 export type SupplierInput = z.infer<typeof supplierInputSchema>;
 export type UpdateSupplierInput = z.infer<typeof updateSupplierSchema>;
 export type SupplierPurchaseInput = z.infer<typeof supplierPurchaseSchema>;
