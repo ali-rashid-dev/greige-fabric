@@ -13,6 +13,7 @@ import type {
   TrialBalance,
 } from "../../shared/types";
 import { FabricServiceError } from "./errors";
+import { writeAuditLog } from "./audit";
 
 interface JournalTransactionRow {
   id: string;
@@ -347,13 +348,18 @@ export class AccountingService {
     if (earlierOpenPeriod) {
       throw new FabricServiceError("CONFLICT", "Close earlier open accounting periods first.");
     }
-    const result = this.database.prepare(`
-      UPDATE accounting_periods SET status = 'closed'
-      WHERE id = ? AND status = 'open'
-    `).run(id);
-    if (result.changes === 0) {
-      throw new FabricServiceError("CONFLICT", "This accounting period is already closed.");
-    }
+    const now = new Date().toISOString();
+    const close = this.database.transaction(() => {
+      const result = this.database.prepare(`
+        UPDATE accounting_periods SET status = 'closed'
+        WHERE id = ? AND status = 'open'
+      `).run(id);
+      if (result.changes === 0) {
+        throw new FabricServiceError("CONFLICT", "This accounting period is already closed.");
+      }
+      writeAuditLog(this.database, "Owner", "accounting_period_closed", "accounting_period", id, `Closed period ${id}`, now);
+    });
+    close.immediate();
     return this.listPeriods().find((period) => period.id === id)!;
   }
 
@@ -483,15 +489,26 @@ export class AccountingService {
     date: string;
     lines: JournalLineInput[];
   }): JournalEntry {
-    postJournal(
-      this.database,
-      "manual_journal",
-      input.reference,
-      `${input.date}T12:00:00.000Z`,
-      input.lines,
-      "Accounting",
-      input.sourceId,
-    );
+    const createdAt = `${input.date}T12:00:00.000Z`;
+    const auditedAt = new Date().toISOString();
+    const post = this.database.transaction(() => {
+      postJournal(
+        this.database,
+        "manual_journal",
+        input.reference,
+        createdAt,
+        input.lines,
+        "Owner",
+        input.sourceId,
+      );
+      if (!this.database.prepare(
+        "SELECT id FROM ledger_transactions WHERE source_key = ?",
+      ).get(`manual_journal:${input.sourceId}`)) {
+        throw new FabricServiceError("VALIDATION", "A manual journal entry cannot have a zero amount.");
+      }
+      writeAuditLog(this.database, "Owner", "manual_journal", "journal", input.sourceId, input.reference, auditedAt);
+    });
+    post.immediate();
     const row = this.database.prepare(
       "SELECT id FROM ledger_transactions WHERE source_key = ?",
     ).get(`manual_journal:${input.sourceId}`) as { id: string } | undefined;
@@ -504,15 +521,26 @@ export class AccountingService {
     date: string;
     lines: JournalLineInput[];
   }): JournalEntry {
-    postJournal(
-      this.database,
-      "opening_balance",
-      "Opening balances",
-      `${input.date}T12:00:00.000Z`,
-      input.lines,
-      "Accounting",
-      input.sourceId,
-    );
+    const createdAt = `${input.date}T12:00:00.000Z`;
+    const auditedAt = new Date().toISOString();
+    const post = this.database.transaction(() => {
+      postJournal(
+        this.database,
+        "opening_balance",
+        "Opening balances",
+        createdAt,
+        input.lines,
+        "Owner",
+        input.sourceId,
+      );
+      if (!this.database.prepare(
+        "SELECT id FROM ledger_transactions WHERE source_key = ?",
+      ).get(`opening_balance:${input.sourceId}`)) {
+        throw new FabricServiceError("VALIDATION", "Opening balances cannot have a zero amount.");
+      }
+      writeAuditLog(this.database, "Owner", "opening_balance", "journal", input.sourceId, "Opening balances", auditedAt);
+    });
+    post.immediate();
     const row = this.database.prepare(
       "SELECT id FROM ledger_transactions WHERE source_key = ?",
     ).get(`opening_balance:${input.sourceId}`) as { id: string } | undefined;
@@ -563,17 +591,21 @@ export class AccountingService {
       ...(line.customer_id ? { customerId: line.customer_id } : {}),
     }));
     const now = new Date().toISOString();
-    postJournal(
-      this.database,
-      "reversal",
-      original.reference,
-      now,
-      lines,
-      "Accounting",
-      `reversal:${id}`,
-      id,
-      reason,
-    );
+    const reverse = this.database.transaction(() => {
+      postJournal(
+        this.database,
+        "reversal",
+        original.reference,
+        now,
+        lines,
+        "Owner",
+        `reversal:${id}`,
+        id,
+        reason,
+      );
+      writeAuditLog(this.database, "Owner", "journal_reversal", "journal", id, reason, now);
+    });
+    reverse.immediate();
     const row = this.database.prepare(
       "SELECT id FROM ledger_transactions WHERE reversal_of_transaction_id = ?",
     ).get(id) as { id: string };

@@ -17,6 +17,7 @@ import type {
 import { InventoryService } from "./inventory";
 import { calculateMinorValue, postJournal } from "./accounting";
 import { FabricServiceError } from "./errors";
+import { writeAuditLog } from "./audit";
 
 export { FabricServiceError } from "./errors";
 
@@ -43,6 +44,7 @@ interface InvoiceRow {
   total_minor: number;
   discount_minor: number;
   amount_received_minor: number;
+  returned_minor: number;
   payment_account_code: string;
   created_at: string;
   customer_id?: string | null;
@@ -103,7 +105,7 @@ function mapInvoice(row: InvoiceRow, items: InvoiceItem[]): Invoice {
     discountMinor: row.discount_minor,
     totalMinor: row.total_minor,
     amountReceivedMinor: row.amount_received_minor,
-    dueMinor: row.total_minor - row.amount_received_minor,
+    dueMinor: Math.max(0, row.total_minor - row.amount_received_minor - row.returned_minor),
     paymentAccount: row.payment_account_code === "1010" ? "bank" : "cash",
     createdAt: row.created_at,
     customerId: row.customer_id ?? undefined,
@@ -175,6 +177,7 @@ export class FabricService {
     const invoices = this.database.prepare(`
       SELECT DISTINCT i.id, i.invoice_number, i.total_minor, i.discount_minor,
              i.amount_received_minor, i.payment_account_code, i.created_at,
+             i.returned_minor,
              i.customer_id, c.code AS customer_code, c.name AS customer_name,
              i.customer_phone, i.customer_address, i.payment_terms_days
       FROM invoices i
@@ -371,11 +374,11 @@ export class FabricService {
         this.database.prepare(`
           INSERT INTO invoice_items (
             id, invoice_id, fabric_id, sku_snapshot, name_snapshot, quantity_mm,
-            unit_price_minor, line_total_minor
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            unit_price_minor, line_total_minor, cost_of_goods_sold_minor
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         `).run(
           itemId, id, line.fabric.id, line.fabric.sku, line.fabric.name,
-          line.quantityMm, line.unitPriceMinor, line.lineTotalMinor,
+          line.quantityMm, line.unitPriceMinor, line.lineTotalMinor, line.costMinor,
         );
         invoiceItems.push({
           id: itemId,
@@ -407,6 +410,7 @@ export class FabricService {
         { accountCode: "5000", debitMinor: costOfGoodsSold },
         { accountCode: "1200", creditMinor: costOfGoodsSold },
       ], "System", id);
+      writeAuditLog(this.database, "POS", "sale", "invoice", id, `Invoice ${invoiceNumber}`, createdAt);
     });
     create.immediate();
     return {
@@ -435,6 +439,7 @@ export class FabricService {
     const rows = this.database.prepare(`
       SELECT i.id, i.invoice_number, i.total_minor, i.discount_minor,
              i.amount_received_minor, i.payment_account_code, i.created_at,
+             i.returned_minor,
              i.customer_id, c.code AS customer_code, c.name AS customer_name,
              i.customer_phone, i.customer_address, i.payment_terms_days
       FROM invoices i LEFT JOIN customers c ON c.id = i.customer_id

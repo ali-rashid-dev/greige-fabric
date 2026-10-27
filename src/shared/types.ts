@@ -17,6 +17,10 @@ import type {
   ExpenseCategoryInput,
   ExpenseInput,
   ExpenseRangeInput,
+  ReturnDataInput,
+  SalesReturnInput,
+  PurchaseReturnInput,
+  ReturnReversalInput,
   AnalyticsReportInput,
   PrintDocumentInput,
   FabricFiltersInput,
@@ -85,6 +89,80 @@ export interface Invoice {
   items: InvoiceItem[];
 }
 
+export interface SalesReturnSource {
+  invoiceId: string;
+  invoiceNumber: string;
+  customerId?: string;
+  customerCode?: string;
+  customerName?: string;
+  createdAt: string;
+  items: Array<{
+    sourceItemId: string;
+    fabricId: string;
+    sku: string;
+    name: string;
+    quantityMm: number;
+    returnedQuantityMm: number;
+    remainingQuantityMm: number;
+    unitPriceMinor: number;
+    lineTotalMinor: number;
+    costOfGoodsSoldMinor: number;
+  }>;
+}
+
+export interface PurchaseReturnSource {
+  purchaseId: string;
+  billNumber: string;
+  supplierId: string;
+  supplierCode: string;
+  supplierName: string;
+  purchaseDate: string;
+  items: Array<{
+    sourceItemId: string;
+    fabricId: string;
+    sku: string;
+    name: string;
+    quantityMm: number;
+    returnedQuantityMm: number;
+    remainingQuantityMm: number;
+    unitCostMinor: number;
+    lineTotalMinor: number;
+  }>;
+}
+
+export interface ReturnRecord {
+  id: string;
+  returnNumber: string;
+  returnType: "sales_return" | "purchase_return";
+  sourceId: string;
+  sourceReference: string;
+  partyName: string;
+  settlementType: "refund" | "customer_credit" | "supplier_credit";
+  totalMinor: number;
+  reason: string;
+  createdAt: string;
+  authorizedUser: string;
+  reversedAt?: string;
+  reversalReason?: string;
+}
+
+export interface AuditLogEntry {
+  id: string;
+  actor: string;
+  action: string;
+  sourceType: string;
+  sourceId: string;
+  reason: string;
+  createdAt: string;
+}
+
+export interface ReturnData {
+  sales: SalesReturnSource[];
+  purchases: PurchaseReturnSource[];
+  history: ReturnRecord[];
+  auditLog: AuditLogEntry[];
+}
+
 export interface FabricDetails {
   fabric: Fabric;
   invoices: Invoice[];
@@ -104,7 +182,7 @@ export interface InventoryMovement {
   sku: string;
   fabricName: string;
   quantityMm: number;
-  movementType: "opening" | "adjustment" | "purchase" | "sale";
+  movementType: "opening" | "adjustment" | "purchase" | "sale" | "sales_return" | "purchase_return" | "return_reversal";
   reference: string;
   reason: string;
   authorizedUser: string;
@@ -446,6 +524,12 @@ export interface CustomerDetails {
 }
 
 export interface DesktopApi {
+  returns: {
+    data(input: ReturnDataInput): Promise<IpcResult<ReturnData>>;
+    createSales(input: SalesReturnInput): Promise<IpcResult<ReturnRecord>>;
+    createPurchase(input: PurchaseReturnInput): Promise<IpcResult<ReturnRecord>>;
+    reverse(input: ReturnReversalInput): Promise<IpcResult<ReturnRecord>>;
+  };
   reports: {
     run(input: AnalyticsReportInput): Promise<IpcResult<AnalyticsReport>>;
   };

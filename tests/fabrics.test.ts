@@ -10,6 +10,7 @@ import { CustomerService } from "../src/main/services/customers";
 import { AccountingService } from "../src/main/services/accounting";
 import { ExpenseService } from "../src/main/services/expenses";
 import { ReportsService } from "../src/main/services/reports";
+import { ReturnsService } from "../src/main/services/returns";
 import {
   fabricInputSchema,
   stockAdjustmentSchema,
@@ -38,6 +39,7 @@ async function createService(): Promise<{
   accounting: AccountingService;
   expenses: ExpenseService;
   reports: ReportsService;
+  returns: ReturnsService;
   close: () => void;
 }> {
   const directory = await mkdtemp(path.join(os.tmpdir(), "greige-fabrics-"));
@@ -52,6 +54,7 @@ async function createService(): Promise<{
     accounting: new AccountingService(database),
     expenses: new ExpenseService(database),
     reports: new ReportsService(database),
+    returns: new ReturnsService(database),
     close: () => database.close(),
   };
 }
@@ -75,6 +78,244 @@ const sampleFabric = {
 };
 
 describe("fabric quality catalog", () => {
+  it("returns saleable fabric against the original invoice with bounded quantity and balanced reversal", async () => {
+    const { database, service, inventory, customers, returns, accounting, close } = await createService();
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-10-27T12:00:00.000Z"));
+    try {
+      const fabric = service.create(fabricInputSchema.parse(sampleFabric));
+      inventory.openStock({
+        fabricId: fabric.id,
+        quantityMeters: 200,
+        unitCost: 145,
+        reference: "RETURNS-OPENING-STOCK",
+        reason: "Returns acceptance stock",
+      }, "Owner");
+      const customer = customers.create({
+        code: "CUS-RETURN",
+        name: "Return Customer",
+        phone: "",
+        address: "",
+        openingBalance: 0,
+        creditLimit: 0,
+        paymentTermsDays: 0,
+      }, "System");
+      const invoice = service.createInvoice(createInvoiceSchema.parse({
+        customerId: customer.id,
+        items: [{ fabricId: fabric.id, quantityMeters: 100, unitRate: 180 }],
+        receivedAmount: 18_000,
+      }));
+      const originalInvoice = service.listInvoices()[0];
+
+      const salesSource = returns.data().sales.find((source) => source.invoiceId === invoice.id);
+      expect(salesSource?.items[0]).toMatchObject({
+        quantityMm: 100_000,
+        remainingQuantityMm: 100_000,
+        costOfGoodsSoldMinor: 1_450_000,
+      });
+      const returned = returns.createSales({
+        invoiceId: invoice.id,
+        settlementType: "refund",
+        paymentAccountCode: "1000",
+        reason: "Ten meters passed inspection",
+        items: [{ sourceItemId: invoice.items[0].id, quantityMeters: 10, saleable: true }],
+      }, "Owner");
+      expect(returned).toMatchObject({
+        returnType: "sales_return",
+        sourceId: invoice.id,
+        sourceReference: invoice.invoiceNumber,
+        totalMinor: 180_000,
+        reason: "Ten meters passed inspection",
+      });
+      expect(service.get(fabric.id).fabric.stockMm).toBe(110_000);
+      expect(service.listInvoices()[0]).toEqual(originalInvoice);
+      expect(returns.data().sales[0].items[0].remainingQuantityMm).toBe(90_000);
+      expect(() => returns.createSales({
+        invoiceId: invoice.id,
+        settlementType: "refund",
+        paymentAccountCode: "1000",
+        reason: "Over return attempt",
+        items: [{ sourceItemId: invoice.items[0].id, quantityMeters: 91, saleable: true }],
+      }, "Owner")).toThrowError(/eligible remaining quantity/);
+
+      const returnTransaction = database.prepare(`
+        SELECT id FROM ledger_transactions WHERE source_key = ?
+      `).get(`sales_return:${returned.id}`) as { id: string };
+      const postings = database.prepare(`
+        SELECT account_code, SUM(debit_minor) AS debit, SUM(credit_minor) AS credit
+        FROM ledger_postings WHERE transaction_id = ? GROUP BY account_code ORDER BY account_code
+      `).all(returnTransaction.id) as Array<{ account_code: string; debit: number; credit: number }>;
+      expect(postings).toEqual([
+        { account_code: "1000", debit: 0, credit: 180_000 },
+        { account_code: "1200", debit: 145_000, credit: 0 },
+        { account_code: "4000", debit: 180_000, credit: 0 },
+        { account_code: "5000", debit: 0, credit: 145_000 },
+      ]);
+      expect(accounting.trialBalance("2026-10-27").isBalanced).toBe(true);
+
+      const reversed = returns.reverse({
+        returnId: returned.id,
+        returnType: "sales_return",
+        reason: "Refund voided",
+      }, "Owner");
+      expect(reversed.reversedAt).toBeTruthy();
+      expect(service.get(fabric.id).fabric.stockMm).toBe(100_000);
+      expect(service.listInvoices()[0]).toEqual(originalInvoice);
+      expect(returns.data().auditLog.slice(0, 2).map((entry) => entry.action)).toEqual([
+        "sales_return_reversal",
+        "sales_return",
+      ]);
+      expect(returns.data().auditLog.every((entry) => !entry.reason.includes("123456"))).toBe(true);
+      expect(() => database.prepare("UPDATE audit_log SET reason = 'Edited' WHERE id = ?")
+        .run(returns.data().auditLog[0].id)).toThrow(/Audit log records are immutable/);
+      expect(() => database.prepare("UPDATE sales_returns SET total_minor = 1 WHERE id = ?")
+        .run(returned.id)).toThrow(/Sales return records are immutable/);
+      expect(accounting.trialBalance("2026-10-27").isBalanced).toBe(true);
+    } finally {
+      close();
+      vi.useRealTimers();
+    }
+  });
+
+  it("posts supplier debit notes for purchase returns and supports an audited reversal", async () => {
+    const { service, suppliers, returns, accounting, close } = await createService();
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-10-27T12:00:00.000Z"));
+    try {
+      const fabric = service.create(fabricInputSchema.parse(sampleFabric));
+      const supplier = suppliers.create({
+        code: "SUP-RETURN",
+        name: "Return Supplier",
+        phone: "",
+        address: "",
+        contactName: "",
+        email: "",
+        openingBalance: 0,
+      }, "System");
+      const purchase = suppliers.receive(supplierPurchaseSchema.parse({
+        supplierId: supplier.id,
+        billNumber: "RETURN-PURCHASE",
+        purchaseDate: "2026-10-27",
+        additionalCosts: 0,
+        paymentMode: "credit",
+        amountPaid: 0,
+        items: [{ fabricId: fabric.id, quantityMeters: 20, unitCost: 145 }],
+      }));
+      const purchaseSource = returns.data().purchases.find((source) => source.billNumber === "RETURN-PURCHASE");
+      expect(purchaseSource?.items[0].remainingQuantityMm).toBe(20_000);
+      const returned = returns.createPurchase({
+        purchaseId: purchase.purchases[0].id,
+        settlementType: "supplier_credit",
+        reason: "Five meters rejected",
+        items: [{ sourceItemId: purchaseSource!.items[0].sourceItemId, quantityMeters: 5 }],
+      }, "Owner");
+      expect(returned).toMatchObject({
+        returnType: "purchase_return",
+        sourceReference: "RETURN-PURCHASE",
+        totalMinor: 72_500,
+      });
+      expect(service.get(fabric.id).fabric.stockMm).toBe(15_000);
+      expect(returns.data().purchases[0].items[0].remainingQuantityMm).toBe(15_000);
+      expect(() => returns.createPurchase({
+        purchaseId: purchase.purchases[0].id,
+        settlementType: "supplier_credit",
+        reason: "Too many",
+        items: [{ sourceItemId: purchaseSource!.items[0].sourceItemId, quantityMeters: 16 }],
+      }, "Owner")).toThrowError(/eligible remaining quantity/);
+      expect(suppliers.reconcile().differenceMinor).toBe(0);
+      expect(accounting.trialBalance("2026-10-27").isBalanced).toBe(true);
+
+      returns.reverse({
+        returnId: returned.id,
+        returnType: "purchase_return",
+        reason: "Supplier accepted goods",
+      }, "Owner");
+      expect(service.get(fabric.id).fabric.stockMm).toBe(20_000);
+      expect(returns.data().purchases[0].items[0].remainingQuantityMm).toBe(20_000);
+      expect(returns.data().auditLog.slice(0, 2).map((entry) => entry.action)).toEqual([
+        "purchase_return_reversal",
+        "purchase_return",
+      ]);
+      expect(accounting.trialBalance("2026-10-27").isBalanced).toBe(true);
+    } finally {
+      close();
+      vi.useRealTimers();
+    }
+  });
+
+  it("applies a customer credit note to the source invoice and advances only the excess", async () => {
+    const { service, inventory, customers, returns, accounting, close } = await createService();
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-10-27T12:00:00.000Z"));
+    try {
+      const fabric = service.create(fabricInputSchema.parse(sampleFabric));
+      inventory.openStock({
+        fabricId: fabric.id,
+        quantityMeters: 30,
+        unitCost: 145,
+        reference: "RETURNS-CREDIT-STOCK",
+        reason: "Customer credit return test",
+      }, "Owner");
+      const customer = customers.create({
+        code: "CUS-CREDIT-RETURN",
+        name: "Credit Note Customer",
+        phone: "",
+        address: "",
+        openingBalance: 0,
+        creditLimit: 10_000,
+        paymentTermsDays: 0,
+      }, "System");
+      const invoice = service.createInvoice(createInvoiceSchema.parse({
+        customerId: customer.id,
+        items: [{ fabricId: fabric.id, quantityMeters: 20, unitRate: 180 }],
+        receivedAmount: 1_000,
+      }));
+      const sourceItemId = invoice.items[0].id;
+      expect(() => returns.createSales({
+        invoiceId: invoice.id,
+        settlementType: "refund",
+        paymentAccountCode: "1000",
+        reason: "Attempted refund of unpaid sale",
+        items: [{ sourceItemId, quantityMeters: 20, saleable: false }],
+      }, "Owner")).toThrowError(/Refund exceeds the amount received/);
+      expect(service.get(fabric.id).fabric.stockMm).toBe(10_000);
+      const creditNote = returns.createSales({
+        invoiceId: invoice.id,
+        settlementType: "customer_credit",
+        reason: "Full order returned as unsaleable",
+        items: [{ sourceItemId, quantityMeters: 20, saleable: false }],
+      }, "Owner");
+
+      expect(creditNote.totalMinor).toBe(invoice.totalMinor);
+      expect(service.listInvoices()[0]).toMatchObject({
+        totalMinor: invoice.totalMinor,
+        amountReceivedMinor: invoice.amountReceivedMinor,
+        dueMinor: 0,
+      });
+      expect(customers.get(customer.id).customer).toMatchObject({
+        outstandingMinor: 0,
+        advanceMinor: 100_000,
+      });
+      expect(service.get(fabric.id).fabric.stockMm).toBe(10_000);
+      expect(accounting.trialBalance("2026-10-27").isBalanced).toBe(true);
+
+      returns.reverse({
+        returnId: creditNote.id,
+        returnType: "sales_return",
+        reason: "Credit note entered in error",
+      }, "Owner");
+      expect(service.listInvoices()[0].dueMinor).toBe(invoice.totalMinor - invoice.amountReceivedMinor);
+      expect(customers.get(customer.id).customer).toMatchObject({
+        outstandingMinor: invoice.totalMinor - invoice.amountReceivedMinor,
+        advanceMinor: 0,
+      });
+      expect(accounting.trialBalance("2026-10-27").isBalanced).toBe(true);
+    } finally {
+      close();
+      vi.useRealTimers();
+    }
+  });
+
   it("requires owner PINs for accounting write contracts", () => {
     const journalLines = [
       { accountCode: "1000", debitMinor: 100 },
@@ -1442,6 +1683,61 @@ describe("fabric quality catalog", () => {
       expect(() => database.prepare(`
         UPDATE ledger_transactions SET reference = 'mutated' WHERE id = 'legacy-journal'
       `).run()).toThrow(/immutable/);
+    } finally {
+      database.close();
+    }
+  });
+
+  it("allocates legacy invoice COGS snapshots exactly to the posted sale total", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "greige-return-migration-"));
+    temporaryDirectories.push(directory);
+    const oldMigrations = path.join(directory, "old-migrations");
+    await mkdir(oldMigrations);
+    for (const name of (await readdir(migrationsDirectory)).filter((entry) => entry < "012_returns_and_audit.sql")) {
+      await copyFile(path.join(migrationsDirectory, name), path.join(oldMigrations, name));
+    }
+
+    const databasePath = path.join(directory, "existing-pos.sqlite");
+    let database = await openDatabase(databasePath, oldMigrations);
+    database.prepare(`
+      INSERT INTO fabrics (
+        id, sku, name, construction, composition, width_inches, gsm,
+        purchase_cost_minor, selling_rate_minor, reorder_threshold_mm, created_at, updated_at
+      ) VALUES ('legacy-fabric', 'LEGACY-FABRIC', 'Legacy Fabric', '60 x 60', 'Cotton',
+        63, 110, 14500, 18000, 500000, '2026-10-01', '2026-10-01')
+    `).run();
+    database.prepare(`
+      INSERT INTO invoices (id, invoice_number, total_minor, created_at)
+      VALUES ('legacy-invoice', 'INV-LEGACY', 3, '2026-10-01T12:00:00.000Z')
+    `).run();
+    database.prepare(`
+      INSERT INTO invoice_items (
+        id, invoice_id, fabric_id, sku_snapshot, name_snapshot, quantity_mm,
+        unit_price_minor, line_total_minor
+      ) VALUES
+        ('legacy-line-1', 'legacy-invoice', 'legacy-fabric', 'LEGACY-FABRIC', 'Legacy Fabric', 1, 1000, 1),
+        ('legacy-line-2', 'legacy-invoice', 'legacy-fabric', 'LEGACY-FABRIC', 'Legacy Fabric', 1, 1000, 1),
+        ('legacy-line-3', 'legacy-invoice', 'legacy-fabric', 'LEGACY-FABRIC', 'Legacy Fabric', 1, 1000, 1)
+    `).run();
+    database.prepare(`
+      INSERT INTO ledger_transactions (id, transaction_type, reference, authorized_user, created_at)
+      VALUES ('legacy-sale', 'sale', 'INV-LEGACY', 'System', '2026-10-01T12:00:00.000Z')
+    `).run();
+    database.prepare(`
+      INSERT INTO ledger_postings (id, transaction_id, account_code, debit_minor, credit_minor)
+      VALUES
+        ('legacy-sale-cogs', 'legacy-sale', '5000', 2, 0),
+        ('legacy-sale-inventory', 'legacy-sale', '1200', 0, 2)
+    `).run();
+    database.close();
+
+    database = await openDatabase(databasePath, migrationsDirectory);
+    try {
+      const allocation = database.prepare(`
+        SELECT SUM(cost_of_goods_sold_minor) AS total
+        FROM invoice_items WHERE invoice_id = 'legacy-invoice'
+      `).get() as { total: number };
+      expect(allocation.total).toBe(2);
     } finally {
       database.close();
     }

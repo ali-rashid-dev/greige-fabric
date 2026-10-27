@@ -9,6 +9,7 @@ import PrintActions from "./print-actions";
 import SalesPos from "./sales-pos";
 import ExpensesManagement from "./expenses-management";
 import ReportsManagement from "./reports-management";
+import ReturnsManagement from "./returns-management";
 import type {
   Fabric,
   FabricDetails,
@@ -28,7 +29,7 @@ import type {
   SupplierStatement,
 } from "@/shared/types";
 
-type Section = "pos" | "fabrics" | "stock" | "suppliers" | "customers" | "invoices" | "expenses" | "reports";
+type Section = "pos" | "fabrics" | "stock" | "suppliers" | "customers" | "invoices" | "expenses" | "reports" | "returns";
 type StatusFilter = "active" | "all" | "inactive" | "low-stock";
 type InventoryView = "overview" | "movements" | "low-stock" | "valuation";
 type CustomerTab = "overview" | "sales" | "payments" | "ledger";
@@ -673,6 +674,12 @@ export default function Home() {
       setError("A reversal reason is required.");
       return;
     }
+    const ownerPin = window.prompt("Enter the owner PIN to authorize this reversal.");
+    if (ownerPin === null) return;
+    if (!/^\d{6,64}$/.test(ownerPin)) {
+      setError("Enter a valid owner PIN.");
+      return;
+    }
     if (!customerDetails) return;
     setSaving(true);
     setError("");
@@ -680,6 +687,7 @@ export default function Home() {
       const result = await getDesktopApi().customers.reverseReceipt({
         receiptId: receipt.id,
         reason,
+        ownerPin,
       });
       if (!result.ok) throw new Error(result.error.message);
       setCustomerDetails(result.data);
@@ -806,6 +814,12 @@ export default function Home() {
       setError("A reversal reason is required.");
       return;
     }
+    const ownerPin = window.prompt("Enter the owner PIN to authorize this reversal.");
+    if (ownerPin === null) return;
+    if (!/^\d{6,64}$/.test(ownerPin)) {
+      setError("Enter a valid owner PIN.");
+      return;
+    }
     if (!supplierDetails) return;
     setSaving(true);
     setError("");
@@ -813,6 +827,7 @@ export default function Home() {
       const result = await getDesktopApi().suppliers.reversePayment({
         paymentId: payment.id,
         reason,
+        ownerPin,
       });
       if (!result.ok) throw new Error(result.error.message);
       setSupplierDetails(result.data);
@@ -903,7 +918,9 @@ export default function Home() {
             ? "Expenses & cashbook"
             : section === "reports"
               ? "Reports & analytics"
-              : "Sales history";
+              : section === "returns"
+                ? "Returns & audit"
+                : "Sales history";
 
   return (
     <main className="app-shell">
@@ -940,6 +957,9 @@ export default function Home() {
           </button>
           <button className={section === "reports" ? "nav-item active" : "nav-item"} onClick={() => setSection("reports")}>
             <span className="nav-icon">▤</span> Reports & analytics
+          </button>
+          <button className={section === "returns" ? "nav-item active" : "nav-item"} onClick={() => setSection("returns")}>
+            <span className="nav-icon">↶</span> Returns & audit
           </button>
         </nav>
         <div className="sidebar-bottom">
@@ -999,6 +1019,7 @@ export default function Home() {
           {section === "pos" && <SalesPos customers={customers} onPosted={handleSalePosted} />}
           {section === "expenses" && <ExpensesManagement />}
           {section === "reports" && <ReportsManagement />}
+          {section === "returns" && <ReturnsManagement />}
 
           {section === "fabrics" && (
             <>

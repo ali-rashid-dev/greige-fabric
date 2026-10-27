@@ -18,6 +18,7 @@ import type {
 } from "../../shared/types";
 import { FabricServiceError } from "./errors";
 import { postJournal } from "./accounting";
+import { writeAuditLog } from "./audit";
 
 interface CustomerRow {
   id: string;
@@ -42,6 +43,7 @@ interface InvoiceRow {
   total_minor: number;
   discount_minor: number;
   amount_received_minor: number;
+  returned_minor: number;
   payment_account_code: string;
   created_at: string;
   customer_id?: string | null;
@@ -214,6 +216,7 @@ export class CustomerService {
     const invoices = this.database.prepare(`
       SELECT i.id, i.invoice_number, i.total_minor, i.discount_minor,
              i.amount_received_minor, i.payment_account_code, i.created_at,
+             i.returned_minor,
              i.customer_id, c.code AS customer_code, c.name AS customer_name,
              i.customer_phone, i.customer_address, i.payment_terms_days
       FROM invoices i JOIN customers c ON c.id = i.customer_id
@@ -275,11 +278,15 @@ export class CustomerService {
       let advanceMinor = 0;
       if (input.invoiceId) {
         const invoice = this.database.prepare(`
-          SELECT total_minor, amount_received_minor FROM invoices
+          SELECT total_minor, amount_received_minor, returned_minor FROM invoices
           WHERE id = ? AND customer_id = ?
-        `).get(input.invoiceId, input.customerId) as { total_minor: number; amount_received_minor: number } | undefined;
+        `).get(input.invoiceId, input.customerId) as {
+          total_minor: number;
+          amount_received_minor: number;
+          returned_minor: number;
+        } | undefined;
         if (!invoice) throw new FabricServiceError("NOT_FOUND", "Customer invoice not found.");
-        if (amount > invoice.total_minor - invoice.amount_received_minor) {
+        if (amount > invoice.total_minor - invoice.amount_received_minor - invoice.returned_minor) {
           throw new FabricServiceError("VALIDATION", "Receipt exceeds the remaining amount due on this invoice.");
         }
         this.database.prepare("UPDATE invoices SET amount_received_minor = amount_received_minor + ? WHERE id = ?")
@@ -310,12 +317,16 @@ export class CustomerService {
           ? [{ accountCode: "2200", customerId: input.customerId, creditMinor: advanceMinor }]
           : []),
       ], "System", id);
+      writeAuditLog(
+        this.database, "Operator", "customer_receipt", "customer_receipt", id,
+        input.note || input.reference || "Customer payment received", now,
+      );
     });
     transaction.immediate();
     return this.get(input.customerId);
   }
 
-  reverseReceipt(input: CustomerReceiptReversalInput): CustomerDetails {
+  reverseReceipt(input: Omit<CustomerReceiptReversalInput, "ownerPin">, authorizedUser = "Owner"): CustomerDetails {
     const now = new Date().toISOString();
     const transaction = this.database.transaction(() => {
       const receipt = this.database.prepare(`
@@ -359,6 +370,10 @@ export class CustomerService {
             : []),
           { accountCode: receipt.account_code, creditMinor: receipt.amount_minor },
         ], "System", `receipt-reversal:${receipt.id}`);
+      writeAuditLog(
+        this.database, authorizedUser, "customer_receipt_reversal", "customer_receipt",
+        receipt.id, input.reason, now,
+      );
     });
     transaction.immediate();
     const receiptCustomer = this.database.prepare("SELECT customer_id FROM customer_receipts WHERE id = ?")

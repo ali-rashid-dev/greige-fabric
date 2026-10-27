@@ -3,6 +3,12 @@ import { channels } from "../shared/channels";
 import type { DesktopApi } from "../shared/types";
 
 const api: DesktopApi = {
+  returns: {
+    data: (input) => ipcRenderer.invoke(channels.returnsData, input),
+    createSales: (input) => ipcRenderer.invoke(channels.createSalesReturn, input),
+    createPurchase: (input) => ipcRenderer.invoke(channels.createPurchaseReturn, input),
+    reverse: (input) => ipcRenderer.invoke(channels.reverseReturn, input),
+  },
   reports: {
     run: (input) => ipcRenderer.invoke(channels.runAnalyticsReport, input),
   },

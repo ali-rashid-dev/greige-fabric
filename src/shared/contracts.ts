@@ -24,6 +24,8 @@ import type {
   Expense,
   ExpenseCategory,
   ExpenseReport,
+  ReturnData,
+  ReturnRecord,
 } from "./types";
 
 function hasPrecision(value: number, scale: number): boolean {
@@ -103,9 +105,64 @@ export const createInvoiceSchema = z.object({
         path: ["items", index, "fabricId"],
         message: "A fabric can appear only once on an invoice.",
       });
+
     }
     ids.add(item.fabricId);
   }
+});
+
+const returnItemFields = z.object({
+  sourceItemId: z.string().uuid(),
+  quantityMeters: z.number().finite().positive().max(1_000_000)
+    .refine((value) => hasPrecision(value, 1000), "Use up to 3 decimal places"),
+});
+const returnOwnerPin = z.string().min(6).max(64).regex(/^\d+$/, "PIN must contain digits only");
+
+export const salesReturnSchema = z.object({
+  invoiceId: z.string().uuid(),
+  settlementType: z.enum(["refund", "customer_credit"]),
+  paymentAccountCode: z.string().trim().min(1).max(40).optional(),
+  reason: z.string().trim().min(1, "A return reason is required").max(240),
+  items: z.array(returnItemFields.extend({ saleable: z.boolean() })).min(1).max(100),
+  ownerPin: returnOwnerPin,
+}).superRefine((input, context) => {
+  if (new Set(input.items.map((item) => item.sourceItemId)).size !== input.items.length) {
+    context.addIssue({ code: "custom", path: ["items"], message: "Each invoice line may appear only once per return." });
+  }
+  if (input.settlementType === "refund" && !input.paymentAccountCode) {
+    context.addIssue({ code: "custom", path: ["paymentAccountCode"], message: "Choose an account for the refund." });
+  }
+  if (input.settlementType === "customer_credit" && input.paymentAccountCode) {
+    context.addIssue({ code: "custom", path: ["paymentAccountCode"], message: "Customer credits do not use a payment account." });
+  }
+});
+
+export const purchaseReturnSchema = z.object({
+  purchaseId: z.string().uuid(),
+  settlementType: z.enum(["supplier_credit", "refund"]),
+  paymentAccountCode: z.string().trim().min(1).max(40).optional(),
+  reason: z.string().trim().min(1, "A return reason is required").max(240),
+  items: z.array(returnItemFields).min(1).max(100),
+  ownerPin: returnOwnerPin,
+}).superRefine((input, context) => {
+  if (new Set(input.items.map((item) => item.sourceItemId)).size !== input.items.length) {
+    context.addIssue({ code: "custom", path: ["items"], message: "Each purchase line may appear only once per return." });
+  }
+  if (input.settlementType === "refund" && !input.paymentAccountCode) {
+    context.addIssue({ code: "custom", path: ["paymentAccountCode"], message: "Choose an account for the refund." });
+  }
+  if (input.settlementType === "supplier_credit" && input.paymentAccountCode) {
+    context.addIssue({ code: "custom", path: ["paymentAccountCode"], message: "Supplier credits do not use a payment account." });
+  }
+});
+
+export const returnDataSchema = z.object({ ownerPin: returnOwnerPin });
+
+export const returnReversalSchema = z.object({
+  returnId: z.string().uuid(),
+  returnType: z.enum(["sales_return", "purchase_return"]),
+  reason: z.string().trim().min(1, "A reversal reason is required").max(240),
+  ownerPin: returnOwnerPin,
 });
 
 export const printDocumentSchema = z.object({
@@ -220,6 +277,7 @@ export const supplierPaymentSchema = z.object({
 export const supplierPaymentReversalSchema = z.object({
   paymentId: z.string().uuid(),
   reason: z.string().trim().min(1, "A reversal reason is required").max(160),
+  ownerPin: returnOwnerPin,
 });
 
 export const supplierAdjustmentSchema = z.object({
@@ -298,6 +356,7 @@ export const customerReceiptSchema = z.object({
 export const customerReceiptReversalSchema = z.object({
   receiptId: z.string().uuid(),
   reason: z.string().trim().min(1, "A reversal reason is required").max(160),
+  ownerPin: returnOwnerPin,
 });
 
 export const customerStatementSchema = z.object({
@@ -458,6 +517,10 @@ export type FabricIdInput = z.infer<typeof fabricIdSchema>;
 export type StockAdjustmentInput = z.infer<typeof stockAdjustmentSchema>;
 export type OpeningStockInput = z.infer<typeof openingStockSchema>;
 export type CreateInvoiceInput = z.infer<typeof createInvoiceSchema>;
+export type SalesReturnInput = z.infer<typeof salesReturnSchema>;
+export type PurchaseReturnInput = z.infer<typeof purchaseReturnSchema>;
+export type ReturnReversalInput = z.infer<typeof returnReversalSchema>;
+export type ReturnDataInput = z.infer<typeof returnDataSchema>;
 export type PrintDocumentInput = z.infer<typeof printDocumentSchema>;
 export type AnalyticsReportInput = z.infer<typeof analyticsReportSchema>;
 export type SupplierInput = z.infer<typeof supplierInputSchema>;
@@ -501,6 +564,10 @@ export type IpcResult<T> =
 
 export interface IpcContract {
   "reports:run": { input: AnalyticsReportInput; output: AnalyticsReport };
+  "returns:data": { input: ReturnDataInput; output: ReturnData };
+  "returns:sales": { input: SalesReturnInput; output: ReturnRecord };
+  "returns:purchases": { input: PurchaseReturnInput; output: ReturnRecord };
+  "returns:reverse": { input: ReturnReversalInput; output: ReturnRecord };
   "fabrics:list": { input: FabricFilters; output: Fabric[] };
   "fabrics:get": { input: FabricIdInput; output: FabricDetails };
   "fabrics:create": { input: FabricInput; output: Fabric };

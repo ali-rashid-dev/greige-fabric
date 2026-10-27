@@ -2,6 +2,10 @@ import { ipcMain } from "electron";
 import { z } from "zod";
 import {
   createInvoiceSchema,
+  returnDataSchema,
+  salesReturnSchema,
+  purchaseReturnSchema,
+  returnReversalSchema,
   accountingClosePeriodSchema,
   accountingCreateAccountSchema,
   accountingEntryIdSchema,
@@ -52,6 +56,7 @@ import { CustomerService } from "../services/customers";
 import { AccountingService } from "../services/accounting";
 import { ExpenseService } from "../services/expenses";
 import { ReportsService } from "../services/reports";
+import { ReturnsService } from "../services/returns";
 import { isTrustedSender } from "./security";
 
 function failure<T>(code: IpcErrorCode, message: string): IpcResult<T> {
@@ -102,6 +107,7 @@ export function registerIpcHandlers(
   accounting: AccountingService,
   expenses: ExpenseService,
   reports: ReportsService,
+  returns: ReturnsService,
   developmentUrl: string | undefined,
   productionFileUrl: string,
 ): void {
@@ -113,6 +119,45 @@ export function registerIpcHandlers(
         throw new FabricServiceError("AUTHORIZATION", "The owner PIN is incorrect.");
       }
       return service.run(reportInput);
+    },
+  );
+  registerHandler(
+    channels.returnsData, returns, developmentUrl, productionFileUrl,
+    returnDataSchema, async (service, input) => {
+      if (!await ownerAuth.verifyPin(input.ownerPin)) {
+        throw new FabricServiceError("AUTHORIZATION", "The owner PIN is incorrect.");
+      }
+      return service.data();
+    },
+  );
+  registerHandler(
+    channels.createSalesReturn, returns, developmentUrl, productionFileUrl,
+    salesReturnSchema, async (service, input) => {
+      const { ownerPin, ...returnInput } = input;
+      if (!await ownerAuth.verifyPin(ownerPin)) {
+        throw new FabricServiceError("AUTHORIZATION", "The owner PIN is incorrect.");
+      }
+      return service.createSales(returnInput, "Owner");
+    },
+  );
+  registerHandler(
+    channels.createPurchaseReturn, returns, developmentUrl, productionFileUrl,
+    purchaseReturnSchema, async (service, input) => {
+      const { ownerPin, ...returnInput } = input;
+      if (!await ownerAuth.verifyPin(ownerPin)) {
+        throw new FabricServiceError("AUTHORIZATION", "The owner PIN is incorrect.");
+      }
+      return service.createPurchase(returnInput, "Owner");
+    },
+  );
+  registerHandler(
+    channels.reverseReturn, returns, developmentUrl, productionFileUrl,
+    returnReversalSchema, async (service, input) => {
+      const { ownerPin, ...reversal } = input;
+      if (!await ownerAuth.verifyPin(ownerPin)) {
+        throw new FabricServiceError("AUTHORIZATION", "The owner PIN is incorrect.");
+      }
+      return service.reverse(reversal, "Owner");
     },
   );
 
@@ -255,7 +300,13 @@ export function registerIpcHandlers(
   );
   registerHandler(
     channels.reverseSupplierPayment, suppliers, developmentUrl, productionFileUrl,
-    supplierPaymentReversalSchema, (service, input) => service.reversePayment(input),
+    supplierPaymentReversalSchema, async (service, input) => {
+      const { ownerPin, ...reversal } = input;
+      if (!await ownerAuth.verifyPin(ownerPin)) {
+        throw new FabricServiceError("AUTHORIZATION", "The owner PIN is incorrect.");
+      }
+      return service.reversePayment(reversal, "Owner");
+    },
   );
   registerHandler(
     channels.adjustSupplier, suppliers, developmentUrl, productionFileUrl,
@@ -305,7 +356,13 @@ export function registerIpcHandlers(
   );
   registerHandler(
     channels.reverseCustomerReceipt, customers, developmentUrl, productionFileUrl,
-    customerReceiptReversalSchema, (service, input) => service.reverseReceipt(input),
+    customerReceiptReversalSchema, async (service, input) => {
+      const { ownerPin, ...reversal } = input;
+      if (!await ownerAuth.verifyPin(ownerPin)) {
+        throw new FabricServiceError("AUTHORIZATION", "The owner PIN is incorrect.");
+      }
+      return service.reverseReceipt(reversal, "Owner");
+    },
   );
   registerHandler(
     channels.customerPaymentAccounts, customers, developmentUrl, productionFileUrl,

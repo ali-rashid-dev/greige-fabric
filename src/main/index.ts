@@ -11,6 +11,7 @@ import { CustomerService } from "./services/customers";
 import { AccountingService } from "./services/accounting";
 import { ExpenseService } from "./services/expenses";
 import { ReportsService } from "./services/reports";
+import { ReturnsService } from "./services/returns";
 
 const developmentUrl = process.env.DESKTOP_DEV_URL;
 let mainWindow: BrowserWindow | null = null;
@@ -131,6 +132,7 @@ app.whenReady().then(async () => {
       new AccountingService(database),
       new ExpenseService(database),
       new ReportsService(database),
+      new ReturnsService(database),
       developmentUrl,
       pathToFileURL(getRendererPath()).href,
     );

@@ -4,6 +4,7 @@ import type { Expense, ExpenseCategory, ExpenseReport } from "../../shared/types
 import type { ExpenseInput } from "../../shared/contracts";
 import { postJournal } from "./accounting";
 import { FabricServiceError } from "./errors";
+import { writeAuditLog } from "./audit";
 
 interface ExpenseRow {
   id: string;
@@ -125,6 +126,10 @@ export class ExpenseService {
         { accountCode: category.account_code, debitMinor: Math.round(input.amount * 100) },
         { accountCode: input.paymentAccountCode, creditMinor: Math.round(input.amount * 100) },
       ], "Expense entry", id);
+      writeAuditLog(
+        this.database, "Operator", "expense", "expense", id, input.description,
+        createdAt,
+      );
     });
     transaction.immediate();
     return this.get(id);

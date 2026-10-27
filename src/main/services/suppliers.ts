@@ -20,6 +20,7 @@ import type {
 import { FabricServiceError } from "./errors";
 import { InventoryService } from "./inventory";
 import { allocateMinorValue, calculateMinorValue, postJournal } from "./accounting";
+import { writeAuditLog } from "./audit";
 
 interface SupplierRow {
   id: string;
@@ -338,6 +339,10 @@ export class SupplierService {
           "Payment recorded at receipt", purchaseTimestamp,
         );
       }
+      writeAuditLog(
+        this.database, "Operator", "supplier_purchase", "supplier_purchase",
+        id, `Supplier receipt ${input.billNumber}`, now,
+      );
     });
     try {
       transaction.immediate();
@@ -390,12 +395,16 @@ export class SupplierService {
         { accountCode: "2100", supplierId: input.supplierId, debitMinor: amount },
         { accountCode, creditMinor: amount },
       ], "System", id);
+      writeAuditLog(
+        this.database, "Operator", "supplier_payment", "supplier_payment",
+        id, input.note || input.reference || "Supplier payment recorded", now,
+      );
     });
     transaction.immediate();
     return this.get(input.supplierId);
   }
 
-  reversePayment(input: SupplierPaymentReversalInput): SupplierDetails {
+  reversePayment(input: Omit<SupplierPaymentReversalInput, "ownerPin">, authorizedUser = "Owner"): SupplierDetails {
     let supplierId = "";
     const now = new Date().toISOString();
     const transaction = this.database.transaction(() => {
@@ -428,6 +437,10 @@ export class SupplierService {
         { accountCode: payment.account_code, debitMinor: payment.amount_minor },
         { accountCode: "2100", supplierId: payment.supplier_id, creditMinor: payment.amount_minor },
       ], "System", `payment-reversal:${payment.id}`);
+      writeAuditLog(
+        this.database, authorizedUser, "supplier_payment_reversal", "supplier_payment",
+        payment.id, input.reason, now,
+      );
     });
     transaction.immediate();
     return this.get(supplierId);
@@ -450,6 +463,10 @@ export class SupplierService {
           { accountCode: "2100", supplierId: input.supplierId, debitMinor: amount },
           { accountCode: "5100", creditMinor: amount },
         ], authorizedUser, randomUUID());
+      writeAuditLog(
+        this.database, authorizedUser, "supplier_adjustment", "supplier",
+        input.supplierId, input.reason, now,
+      );
     });
     transaction.immediate();
     return this.get(input.supplierId);

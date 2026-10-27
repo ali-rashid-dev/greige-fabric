@@ -311,7 +311,7 @@ export class ReportsService {
     `).get(customerId, asOf) as { balance_minor: number };
     let remaining = Math.max(0, customer.balance_minor);
     const invoices = this.database.prepare(`
-      SELECT i.id, i.total_minor - i.amount_received_minor AS original_due_minor,
+      SELECT i.id, i.total_minor - i.amount_received_minor - i.returned_minor AS original_due_minor,
         i.created_at, i.payment_terms_days
       FROM invoices i
       WHERE i.customer_id = ? AND substr(i.created_at, 1, 10) <= ?

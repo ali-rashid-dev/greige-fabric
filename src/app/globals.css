@@ -431,6 +431,66 @@ button:disabled {
   justify-self: start;
 }
 
+.returns-page {
+  display: grid;
+  gap: 16px;
+}
+
+.returns-page .panel {
+  padding: 18px;
+}
+
+.returns-page .panel-heading {
+  grid-column: 1 / -1;
+}
+
+.returns-page .return-line {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: minmax(0, 1fr) minmax(150px, 220px);
+  align-items: center;
+  gap: 7px 16px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: #fbfcfb;
+}
+
+.returns-page .return-line > span {
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.returns-page .return-line > label {
+  grid-column: 2;
+}
+
+.returns-page .return-line .return-checkbox {
+  display: flex;
+  grid-column: 1;
+  grid-row: 2;
+  align-items: center;
+  gap: 8px;
+}
+
+.returns-page .return-checkbox input {
+  width: 16px;
+  height: 16px;
+}
+
+.returns-page .return-note {
+  grid-column: 1 / -1;
+  margin: 0;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.returns-page .return-reversal-form {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+}
+
 .category-form {
   grid-template-columns: 1fr 1fr;
   margin-bottom: 18px;

@@ -7,6 +7,7 @@ import type {
 import type { InventoryMovement, InventoryReport } from "../../shared/types";
 import { calculateMinorValue, calculateProportionalValue, postJournal } from "./accounting";
 import { FabricServiceError } from "./errors";
+import { writeAuditLog } from "./audit";
 
 interface StockRow {
   stock_qty_mm: number;
@@ -61,6 +62,10 @@ export class InventoryService {
         { accountCode: "1200", debitMinor: value },
         { accountCode: "3000", creditMinor: value },
       ], authorizedUser, movementId);
+      writeAuditLog(
+        this.database, authorizedUser, "inventory_opening", "stock_movement",
+        movementId, input.reason, createdAt,
+      );
     });
     transaction.immediate();
   }
@@ -98,6 +103,10 @@ export class InventoryService {
           { accountCode: "5100", debitMinor: value },
           { accountCode: "1200", creditMinor: value },
         ], authorizedUser, movementId);
+      writeAuditLog(
+        this.database, authorizedUser, "inventory_adjustment", "stock_movement",
+        movementId, input.reason, createdAt,
+      );
     });
     transaction.immediate();
   }
