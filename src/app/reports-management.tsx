@@ -52,7 +52,7 @@ function totalLabels(reportType: AnalyticsReportType): Array<{ key: string; labe
       { key: "grossSalesMinor", label: "Gross sales" },
       { key: "returnsMinor", label: "Returns" },
       { key: "netSalesMinor", label: "Net sales" },
-      { key: "balanceMinor", label: "Outstanding" },
+      { key: "balanceMinor", label: "Credit at sale" },
     ];
     case "purchases": return [
       { key: "quantityMeters", label: "Purchased quantity (m)" },
@@ -105,6 +105,7 @@ export default function ReportsManagement() {
   const [accountCode, setAccountCode] = useState("1000");
   const [accounts, setAccounts] = useState<ChartOfAccount[]>([]);
   const [report, setReport] = useState<AnalyticsReport | null>(null);
+  const [loadedInput, setLoadedInput] = useState<Omit<AnalyticsReportInput, "page"> | null>(null);
   const [loading, setLoading] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [error, setError] = useState("");
@@ -119,30 +120,39 @@ export default function ReportsManagement() {
 
   async function runReport(event?: React.FormEvent<HTMLFormElement>, requestedPage = 1) {
     event?.preventDefault();
+    const isFreshRequest = event !== undefined;
     setLoading(true);
     setError("");
     try {
-      let selectedAccount = accountCode;
-      if (reportType === "general_ledger") {
-        const chart = await loadAccounts();
-        if (!chart.some((account) => account.code === selectedAccount)) {
-          selectedAccount = chart[0]?.code ?? "";
-          setAccountCode(selectedAccount);
+      let parameters = loadedInput;
+      if (isFreshRequest) {
+        let selectedAccount = accountCode;
+        if (reportType === "general_ledger") {
+          const chart = await loadAccounts();
+          if (!chart.some((account) => account.code === selectedAccount)) {
+            selectedAccount = chart[0]?.code ?? "";
+            setAccountCode(selectedAccount);
+          }
         }
+        parameters = {
+          reportType,
+          from,
+          to,
+          search,
+          pageSize,
+          ownerPin,
+          ...(reportType === "general_ledger" ? { accountCode: selectedAccount } : {}),
+        };
       }
+      if (!parameters) return;
       const input: AnalyticsReportInput = {
-        reportType,
-        from,
-        to,
-        search,
+        ...parameters,
         page: requestedPage,
-        pageSize,
-        ownerPin,
-        ...(reportType === "general_ledger" ? { accountCode: selectedAccount } : {}),
       };
       const result = await getDesktopApi().reports.run(input);
       if (!result.ok) throw new Error(result.error.message);
       setReport(result.data);
+      if (isFreshRequest) setLoadedInput(parameters);
       setPage(requestedPage);
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : "Unable to generate this report.");
@@ -152,33 +162,23 @@ export default function ReportsManagement() {
   }
 
   async function exportCsv() {
-    if (!report) return;
+    if (!report || !loadedInput) return;
     setExporting(true);
     setError("");
     try {
       const firstPage = await getDesktopApi().reports.run({
-        reportType: report.reportType,
-        from,
-        to,
-        search,
+        ...loadedInput,
         page: 1,
         pageSize: 500,
-        ownerPin,
-        ...(report.reportType === "general_ledger" ? { accountCode } : {}),
       });
       if (!firstPage.ok) throw new Error(firstPage.error.message);
       const rows = [...firstPage.data.rows];
       const pages = Math.ceil(firstPage.data.totalRows / 500);
       for (let exportPage = 2; exportPage <= pages; exportPage += 1) {
         const result = await getDesktopApi().reports.run({
-          reportType: report.reportType,
-          from,
-          to,
-          search,
+          ...loadedInput,
           page: exportPage,
           pageSize: 500,
-          ownerPin,
-          ...(report.reportType === "general_ledger" ? { accountCode } : {}),
         });
         if (!result.ok) throw new Error(result.error.message);
         rows.push(...result.data.rows);
@@ -225,6 +225,7 @@ export default function ReportsManagement() {
               if (next) {
                 setReportType(next.value);
                 setReport(null);
+                setLoadedInput(null);
                 setPage(1);
               }
             }}>
@@ -260,7 +261,7 @@ export default function ReportsManagement() {
       {report && (
         <>
           {reportType === "daily_sales" && <p className="report-note">Returns are shown as zero because sales returns are not yet recorded in this application.</p>}
-          {reportType === "stock_summary" && <p className="report-note">Stock quantity and valuation show the current inventory snapshot. The ledger reconciliation uses the selected reporting date.</p>}
+          {reportType === "stock_summary" && <p className="report-note">Stock quantity and valuation show the current inventory snapshot. The ledger reconciliation uses the current date.</p>}
           <div className="summary-grid report-summary-grid">
             {totalLabels(report.reportType).map(({ key, label }) => {
               const value = report.totals[key] ?? 0;
@@ -272,7 +273,7 @@ export default function ReportsManagement() {
           </div>
           {report.reconciliations.length > 0 && (
             <section className="panel report-reconciliation">
-              <h3>Reconciliation checks · as of {report.to}</h3>
+              <h3>Reconciliation checks · as of {report.reportType === "stock_summary" ? today : report.to}</h3>
               {report.reconciliations.map((check) => (
                 <div className="report-reconciliation-row" key={check.name}>
                   <strong>{check.name}</strong>

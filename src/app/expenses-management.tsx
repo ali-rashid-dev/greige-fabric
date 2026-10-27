@@ -75,6 +75,7 @@ export default function ExpensesManagement() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [ledgerError, setLedgerError] = useState("");
   const [notice, setNotice] = useState("");
 
   const loadData = useCallback(async () => {
@@ -134,9 +135,12 @@ export default function ExpensesManagement() {
       from: range.from,
       to: range.to,
     }).then((result) => {
-      if (active) setAccountLedger(resultData(result));
+      if (active) {
+        setAccountLedger(resultData(result));
+        setLedgerError("");
+      }
     }).catch((loadError: unknown) => {
-      if (active) setError(loadError instanceof Error ? loadError.message : "Unable to load account ledger.");
+      if (active) setLedgerError(loadError instanceof Error ? loadError.message : "Unable to load account ledger.");
     });
     return () => {
       active = false;
@@ -228,6 +232,7 @@ export default function ExpensesManagement() {
         ))}
       </div>
       {error && <div className="error-banner" role="alert">{error}</div>}
+      {ledgerError && <div className="error-banner" role="alert">{ledgerError}</div>}
       {notice && <div className="notice" role="status">{notice}</div>}
       {view !== "add" && (
         <form className="panel-toolbar expense-range" onSubmit={(event) => {

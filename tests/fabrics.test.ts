@@ -491,13 +491,17 @@ describe("fabric quality catalog", () => {
 
       const stock = reports.run({
         reportType: "stock_summary",
-        from: "2026-10-27",
-        to: "2026-10-27",
+        from: "2026-10-26",
+        to: "2026-10-26",
         search: "",
         page: 1,
         pageSize: 25,
       });
-      expect(stock.reconciliations[0]).toMatchObject({ isBalanced: true, differenceMinor: 0 });
+      expect(stock).toMatchObject({
+        from: "2026-10-26",
+        to: "2026-10-26",
+        reconciliations: [{ isBalanced: true, differenceMinor: 0 }],
+      });
       const customerBalances = reports.run({
         reportType: "customer_balances",
         from: "2026-10-27",

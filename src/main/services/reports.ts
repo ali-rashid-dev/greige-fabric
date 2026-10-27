@@ -62,7 +62,7 @@ export class ReportsService {
       case "purchases":
         return this.purchases(input.from, input.to);
       case "stock_summary":
-        return this.stockSummary(input.to);
+        return this.stockSummary();
       case "gross_profit":
         return this.profitReport(input.from, input.to, true);
       case "profit_loss":
@@ -178,7 +178,7 @@ export class ReportsService {
     };
   }
 
-  private stockSummary(asOf: string): QueryReport {
+  private stockSummary(): QueryReport {
     const rows = this.database.prepare(`
       SELECT sku, name, stock_qty_mm / 1000.0 AS quantity_meters, stock_value_minor,
         CASE WHEN stock_qty_mm = 0 THEN purchase_cost_minor
@@ -191,7 +191,7 @@ export class ReportsService {
       stock_value_minor: number;
       unit_cost_minor: number;
     }>;
-    const inventoryControl = this.accountBalance("1200", asOf);
+    const inventoryControl = this.accountBalance("1200", this.currentLocalDate());
     const stockValueMinor = rows.reduce((sum, row) => sum + row.stock_value_minor, 0);
     return {
       columns: [
@@ -472,5 +472,10 @@ export class ReportsService {
       WHERE p.account_code = ? AND substr(t.created_at, 1, 10) ${comparison} ?
     `).get(accountCode, asOf) as { balance_minor: number };
     return normalCredit ? -row.balance_minor : row.balance_minor;
+  }
+
+  private currentLocalDate(): string {
+    const date = new Date();
+    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
   }
 }
