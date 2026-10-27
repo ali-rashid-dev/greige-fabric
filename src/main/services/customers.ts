@@ -67,6 +67,8 @@ interface ReceiptRow {
   account_code: string;
   account_name: string;
   amount_minor: number;
+  receivable_minor: number;
+  advance_minor: number;
   reference: string;
   note: string;
   created_at: string;
@@ -220,7 +222,7 @@ export class CustomerService {
     const receiptRows = this.database.prepare(`
       SELECT r.id, r.invoice_id, i.invoice_number, r.receipt_number, r.account_code,
              a.name AS account_name, r.amount_minor, r.reference, r.note, r.created_at,
-             r.reversed_at, r.reversal_reason
+             r.receivable_minor, r.advance_minor, r.reversed_at, r.reversal_reason
       FROM customer_receipts r
       JOIN ledger_accounts a ON a.code = r.account_code
       LEFT JOIN invoices i ON i.id = r.invoice_id
@@ -234,6 +236,8 @@ export class CustomerService {
       invoiceId: row.invoice_id ?? undefined,
       invoiceNumber: row.invoice_number ?? undefined,
       amountMinor: row.amount_minor,
+      receivableMinor: row.receivable_minor,
+      advanceMinor: row.advance_minor,
       reference: row.reference,
       note: row.note,
       createdAt: row.created_at,
@@ -246,7 +250,7 @@ export class CustomerService {
   paymentAccounts(): PaymentAccount[] {
     return this.database.prepare(`
       SELECT code, name FROM ledger_accounts
-      WHERE account_type = 'asset' AND code NOT IN ('1200', '1300')
+      WHERE account_type = 'asset' AND is_payment_account = 1
       ORDER BY code
     `).all() as PaymentAccount[];
   }
@@ -260,6 +264,8 @@ export class CustomerService {
     const transaction = this.database.transaction(() => {
       this.requireCustomer(input.customerId);
       this.requirePaymentAccount(accountCode);
+      let receivableMinor = amount;
+      let advanceMinor = 0;
       if (input.invoiceId) {
         const invoice = this.database.prepare(`
           SELECT total_minor, amount_received_minor FROM invoices
@@ -271,26 +277,32 @@ export class CustomerService {
         }
         this.database.prepare("UPDATE invoices SET amount_received_minor = amount_received_minor + ? WHERE id = ?")
           .run(amount, input.invoiceId);
+      } else {
+        const outstanding = this.database.prepare(`
+          SELECT COALESCE(SUM(debit_minor - credit_minor), 0) AS balance
+          FROM ledger_postings WHERE account_code = '1300' AND customer_id = ?
+        `).get(input.customerId) as { balance: number };
+        receivableMinor = Math.min(amount, Math.max(0, outstanding.balance));
+        advanceMinor = amount - receivableMinor;
       }
       this.database.prepare(`
         INSERT INTO customer_receipts (
-          id, customer_id, invoice_id, receipt_number, account_code, amount_minor, reference, note, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+          id, customer_id, invoice_id, receipt_number, account_code, amount_minor,
+          receivable_minor, advance_minor, reference, note, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
         id, input.customerId, input.invoiceId ?? null, receiptNumber, accountCode, amount,
-        input.reference, input.note, now,
+        receivableMinor, advanceMinor, input.reference, input.note, now,
       );
-      if (input.invoiceId) {
-        postJournal(this.database, "customer_receipt", receiptNumber, now, [
-          { accountCode, debitMinor: amount },
-          { accountCode: "1300", customerId: input.customerId, creditMinor: amount },
-        ]);
-      } else {
-        postJournal(this.database, "customer_advance", receiptNumber, now, [
-          { accountCode, debitMinor: amount },
-          { accountCode: "2200", creditMinor: amount, customerId: input.customerId },
-        ]);
-      }
+      postJournal(this.database, "customer_receipt", receiptNumber, now, [
+        { accountCode, debitMinor: amount },
+        ...(receivableMinor > 0
+          ? [{ accountCode: "1300", customerId: input.customerId, creditMinor: receivableMinor }]
+          : []),
+        ...(advanceMinor > 0
+          ? [{ accountCode: "2200", customerId: input.customerId, creditMinor: advanceMinor }]
+          : []),
+      ]);
     });
     transaction.immediate();
     return this.get(input.customerId);
@@ -300,7 +312,8 @@ export class CustomerService {
     const now = new Date().toISOString();
     const transaction = this.database.transaction(() => {
       const receipt = this.database.prepare(`
-        SELECT id, customer_id, invoice_id, receipt_number, account_code, amount_minor, reversed_at
+        SELECT id, customer_id, invoice_id, receipt_number, account_code, amount_minor,
+               receivable_minor, advance_minor, reversed_at
         FROM customer_receipts WHERE id = ?
       `).get(input.receiptId) as {
         id: string;
@@ -309,6 +322,8 @@ export class CustomerService {
         receipt_number: string;
         account_code: string;
         amount_minor: number;
+        receivable_minor: number;
+        advance_minor: number;
         reversed_at: string | null;
       } | undefined;
       if (!receipt) throw new FabricServiceError("NOT_FOUND", "Customer receipt not found.");
@@ -329,7 +344,12 @@ export class CustomerService {
           { accountCode: receipt.account_code, creditMinor: receipt.amount_minor },
         ]
         : [
-          { accountCode: "2200", debitMinor: receipt.amount_minor, customerId: receipt.customer_id },
+          ...(receipt.receivable_minor > 0
+            ? [{ accountCode: "1300", customerId: receipt.customer_id, debitMinor: receipt.receivable_minor }]
+            : []),
+          ...(receipt.advance_minor > 0
+            ? [{ accountCode: "2200", customerId: receipt.customer_id, debitMinor: receipt.advance_minor }]
+            : []),
           { accountCode: receipt.account_code, creditMinor: receipt.amount_minor },
         ]);
     });
@@ -411,7 +431,7 @@ export class CustomerService {
   private requirePaymentAccount(code: string): void {
     const row = this.database.prepare(`
       SELECT code FROM ledger_accounts
-      WHERE code = ? AND account_type = 'asset' AND code NOT IN ('1200', '1300')
+      WHERE code = ? AND account_type = 'asset' AND is_payment_account = 1
     `).get(code);
     if (!row) throw new FabricServiceError("VALIDATION", "Choose a configured cash or payment account.");
   }

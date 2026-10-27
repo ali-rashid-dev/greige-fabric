@@ -537,7 +537,7 @@ export class SupplierService {
   private requirePaymentAccount(code: string): void {
     const row = this.database.prepare(`
       SELECT code FROM ledger_accounts
-      WHERE code = ? AND account_type = 'asset' AND code NOT IN ('1200', '1300')
+      WHERE code = ? AND account_type = 'asset' AND is_payment_account = 1
     `).get(code);
     if (!row) throw new FabricServiceError("VALIDATION", "Choose a configured cash or payment account.");
   }

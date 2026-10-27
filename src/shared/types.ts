@@ -220,6 +220,8 @@ export interface CustomerReceipt {
   account: "cash" | "bank";
   paymentMethod: string;
   amountMinor: number;
+  receivableMinor: number;
+  advanceMinor: number;
   reference: string;
   note: string;
   createdAt: string;

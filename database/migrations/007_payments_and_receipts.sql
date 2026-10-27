@@ -4,9 +4,7 @@ VALUES ('2200', 'Customer Advances', 'liability');
 ALTER TABLE supplier_payments ADD COLUMN reversed_at TEXT;
 ALTER TABLE supplier_payments ADD COLUMN reversal_reason TEXT NOT NULL DEFAULT '';
 
-ALTER TABLE customer_receipts RENAME TO customer_receipts_legacy;
-
-CREATE TABLE customer_receipts (
+CREATE TABLE customer_receipts_new (
   id TEXT PRIMARY KEY NOT NULL,
   customer_id TEXT NOT NULL REFERENCES customers(id) ON DELETE RESTRICT,
   invoice_id TEXT REFERENCES invoices(id) ON DELETE RESTRICT,
@@ -20,13 +18,14 @@ CREATE TABLE customer_receipts (
   reversal_reason TEXT NOT NULL DEFAULT ''
 );
 
-INSERT INTO customer_receipts (
+INSERT INTO customer_receipts_new (
   id, customer_id, receipt_number, account_code, amount_minor, reference, note, created_at
 )
 SELECT id, customer_id, receipt_number, account_code, amount_minor, reference, note, created_at
-FROM customer_receipts_legacy;
+FROM customer_receipts;
 
-DROP TABLE customer_receipts_legacy;
+DROP TABLE customer_receipts;
+ALTER TABLE customer_receipts_new RENAME TO customer_receipts;
 
 CREATE INDEX customer_receipts_customer_idx
   ON customer_receipts(customer_id, created_at);

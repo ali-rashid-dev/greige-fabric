@@ -665,31 +665,55 @@ describe("fabric quality catalog", () => {
         VALUES ('1020', 'Mobile Wallet', 'asset')
       `).run();
       const accounts = customers.paymentAccounts();
-      expect(accounts).toContainEqual({ code: "1020", name: "Mobile Wallet" });
+      expect(accounts).not.toContainEqual({ code: "1020", name: "Mobile Wallet" });
+      database.prepare("UPDATE ledger_accounts SET is_payment_account = 1 WHERE code = '1020'").run();
+      expect(customers.paymentAccounts()).toContainEqual({ code: "1020", name: "Mobile Wallet" });
 
       const customer = customers.create({
         code: "CUS-ADVANCE",
         name: "Advance Customer",
         phone: "",
         address: "",
-        openingBalance: 0,
+        openingBalance: 2_000,
         creditLimit: 0,
         paymentTermsDays: 0,
-      }, "System");
-      const advance = customers.receive(customerReceiptSchema.parse({
+      }, "Owner");
+      const partialReceipt = customers.receive(customerReceiptSchema.parse({
         customerId: customer.id,
-        amount: 5_000,
+        amount: 1_500,
         accountCode: "1020",
-        reference: "ADVANCE-1",
+        reference: "PARTIAL-SETTLEMENT",
       }));
-      expect(advance.customer.outstandingMinor).toBe(0);
-      expect(advance.customer.advanceMinor).toBe(500_000);
-      const reversedAdvance = customers.reverseReceipt({
-        receiptId: advance.receipts[0].id,
-        reason: "Customer requested refund",
+      expect(partialReceipt.customer.outstandingMinor).toBe(50_000);
+      expect(partialReceipt.customer.advanceMinor).toBe(0);
+      expect(partialReceipt.receipts[0]).toMatchObject({
+        receivableMinor: 150_000,
+        advanceMinor: 0,
       });
-      expect(reversedAdvance.customer.outstandingMinor).toBe(0);
-      expect(reversedAdvance.customer.advanceMinor).toBe(0);
+
+      const splitReceipt = customers.receive(customerReceiptSchema.parse({
+        customerId: customer.id,
+        amount: 1_000,
+        accountCode: "1020",
+        reference: "SPLIT-SETTLEMENT",
+      }));
+      expect(splitReceipt.customer.outstandingMinor).toBe(0);
+      expect(splitReceipt.customer.advanceMinor).toBe(50_000);
+      expect(splitReceipt.receipts[0]).toMatchObject({
+        receivableMinor: 50_000,
+        advanceMinor: 50_000,
+      });
+      const reversedSplit = customers.reverseReceipt({
+        receiptId: splitReceipt.receipts[0].id,
+        reason: "Reverse split receipt",
+      });
+      expect(reversedSplit.customer.outstandingMinor).toBe(50_000);
+      expect(reversedSplit.customer.advanceMinor).toBe(0);
+      const reversedPartial = customers.reverseReceipt({
+        receiptId: partialReceipt.receipts[0].id,
+        reason: "Reverse partial receipt",
+      });
+      expect(reversedPartial.customer.outstandingMinor).toBe(200_000);
 
       const supplier = suppliers.create({
         code: "SUP-REVERSE",
@@ -708,6 +732,13 @@ describe("fabric quality catalog", () => {
         note: "Partial settlement",
       });
       expect(paymentDetails.supplier.outstandingMinor).toBe(750_000);
+      expect(() => suppliers.pay({
+        supplierId: supplier.id,
+        amount: 1,
+        accountCode: "1300",
+        reference: "",
+        note: "",
+      })).toThrowError(new FabricServiceError("VALIDATION", "Choose a configured cash or payment account."));
       expect(paymentDetails.payments[0]).toMatchObject({
         paymentMethod: "Mobile Wallet",
         amountMinor: 250_000,
@@ -745,6 +776,62 @@ describe("fabric quality catalog", () => {
     database = await openDatabase(databasePath, migrations);
     database.close();
     expect((await readdir(directory)).filter((name) => name.endsWith(".bak"))).toHaveLength(1);
+  });
+
+  it("rolls back the receipt-table migration when a legacy payment account is invalid", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "greige-receipt-migration-"));
+    temporaryDirectories.push(directory);
+    const legacyMigrations = path.join(directory, "migrations");
+    await mkdir(legacyMigrations);
+    for (const name of (await readdir(migrationsDirectory)).filter((entry) => entry < "007_payments_and_receipts.sql")) {
+      await copyFile(path.join(migrationsDirectory, name), path.join(legacyMigrations, name));
+    }
+
+    const databasePath = path.join(directory, "pos.sqlite");
+    let database = await openDatabase(databasePath, legacyMigrations);
+    const legacyReceiptColumns = database.prepare("PRAGMA table_info(customer_receipts)")
+      .all() as Array<{ name: string }>;
+    expect(legacyReceiptColumns.map((column) => column.name)).toContain("account_code");
+    const dependencies = database.prepare(`
+      SELECT type, name FROM sqlite_schema
+      WHERE name != 'customer_receipts'
+        AND (
+          (type = 'view' AND lower(sql) LIKE '%customer_receipts%')
+          OR (type = 'trigger' AND (
+            tbl_name = 'customer_receipts' OR lower(sql) LIKE '%customer_receipts%'
+          ))
+          OR (type = 'table' AND lower(sql) LIKE '%references customer_receipts%')
+        )
+    `).all();
+    expect(dependencies).toEqual([]);
+    database.prepare(`
+      INSERT INTO customers (id, code, name, created_at, updated_at)
+      VALUES ('legacy-customer', 'LEGACY', 'Legacy Customer', '2025-01-01', '2025-01-01')
+    `).run();
+    database.pragma("ignore_check_constraints = ON");
+    database.prepare(`
+      INSERT INTO customer_receipts (
+        id, customer_id, receipt_number, account_code, amount_minor, created_at
+      ) VALUES ('legacy-receipt', 'legacy-customer', 'R-LEGACY', '9999', 5000, '2025-01-01')
+    `).run();
+    database.close();
+
+    await expect(openDatabase(databasePath, migrationsDirectory)).rejects.toThrow();
+
+    database = await openDatabase(databasePath, legacyMigrations);
+    try {
+      const appliedMigration = database.prepare(
+        "SELECT name FROM schema_migrations WHERE name = '007_payments_and_receipts.sql'",
+      ).get();
+      expect(appliedMigration).toBeUndefined();
+      const columns = database.prepare("PRAGMA table_info(customer_receipts)")
+        .all() as Array<{ name: string }>;
+      expect(columns.map((column) => column.name)).not.toContain("reversed_at");
+      expect(database.prepare("SELECT id, account_code FROM customer_receipts")
+        .get()).toEqual({ id: "legacy-receipt", account_code: "9999" });
+    } finally {
+      database.close();
+    }
   });
 
   it("backfills existing movement balances and opening inventory value during migration", async () => {
