@@ -247,7 +247,7 @@ export class ReturnsService {
     }));
   }
 
-  createSales(input: Omit<SalesReturnInput, "ownerPin">, authorizedUser: string): ReturnRecord {
+  createSales(input: SalesReturnInput, authorizedUser: string): ReturnRecord {
     const id = randomUUID();
     const now = new Date().toISOString();
     const datePart = now.slice(0, 10).replaceAll("-", "");
@@ -424,7 +424,7 @@ export class ReturnsService {
     return this.history().find((item) => item.id === id)!;
   }
 
-  createPurchase(input: Omit<PurchaseReturnInput, "ownerPin">, authorizedUser: string): ReturnRecord {
+  createPurchase(input: PurchaseReturnInput, authorizedUser: string): ReturnRecord {
     const id = randomUUID();
     const now = new Date().toISOString();
     const datePart = now.slice(0, 10).replaceAll("-", "");
@@ -528,7 +528,7 @@ export class ReturnsService {
     return this.history().find((item) => item.id === id)!;
   }
 
-  reverse(input: Omit<ReturnReversalInput, "ownerPin">, authorizedUser: string): ReturnRecord {
+  reverse(input: ReturnReversalInput, authorizedUser: string): ReturnRecord {
     const now = new Date().toISOString();
     const transaction = this.database.transaction(() => {
       if (input.returnType === "sales_return") this.reverseSales(input, authorizedUser, now);
@@ -538,7 +538,7 @@ export class ReturnsService {
     return this.history().find((item) => item.id === input.returnId)!;
   }
 
-  private reverseSales(input: Omit<ReturnReversalInput, "ownerPin">, authorizedUser: string, now: string): void {
+  private reverseSales(input: ReturnReversalInput, authorizedUser: string, now: string): void {
     const record = this.database.prepare(`
       SELECT id, return_number, invoice_id, customer_id, settlement_type, payment_account_code,
         total_minor, receivable_minor, advance_minor, reversed_at
@@ -630,7 +630,7 @@ export class ReturnsService {
     this.writeAudit(authorizedUser, "sales_return_reversal", "sales_return", record.id, input.reason, now);
   }
 
-  private reversePurchase(input: Omit<ReturnReversalInput, "ownerPin">, authorizedUser: string, now: string): void {
+  private reversePurchase(input: ReturnReversalInput, authorizedUser: string, now: string): void {
     const record = this.database.prepare(`
       SELECT id, return_number, supplier_id, settlement_type, payment_account_code,
         reversed_at FROM purchase_returns WHERE id = ?

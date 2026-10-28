@@ -86,7 +86,7 @@ export function finalizedProfitForPeriod(
 export class ReportsService {
   constructor(private readonly database: Database.Database) {}
 
-  run(input: Omit<AnalyticsReportInput, "ownerPin">): AnalyticsReport {
+  run(input: AnalyticsReportInput): AnalyticsReport {
     const report = this.buildReport(input);
     const query = input.search.toLocaleLowerCase();
     const filteredRows = query
@@ -109,7 +109,7 @@ export class ReportsService {
     };
   }
 
-  private buildReport(input: Omit<AnalyticsReportInput, "ownerPin">): QueryReport {
+  private buildReport(input: AnalyticsReportInput): QueryReport {
     switch (input.reportType) {
       case "daily_sales":
         return this.dailySales(input.from, input.to);

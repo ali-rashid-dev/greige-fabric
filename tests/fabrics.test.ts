@@ -25,7 +25,6 @@ import {
   accountingEntryReversalSchema,
   accountingManualEntrySchema,
   accountingOpeningBalancesSchema,
-  backupAuthorizationSchema,
   backupScheduleSchema,
   printDocumentSchema,
 } from "../src/shared/contracts";
@@ -417,36 +416,32 @@ describe("fabric quality catalog", () => {
     }
   });
 
-  it("requires owner PINs for accounting write contracts", () => {
+  it("accepts valid accounting write contracts without owner authorization", () => {
     const journalLines = [
       { accountCode: "1000", debitMinor: 100 },
       { accountCode: "3000", creditMinor: 100 },
     ];
     expect(accountingManualEntrySchema.safeParse({
-      sourceId: "owner-pin-test",
-      reference: "OWNER-PIN-TEST",
+      sourceId: "write-contract-test",
+      reference: "WRITE-CONTRACT-TEST",
       date: "2026-10-27",
       lines: journalLines,
-    }).success).toBe(false);
+    }).success).toBe(true);
     expect(accountingOpeningBalancesSchema.safeParse({
-      sourceId: "owner-pin-test",
+      sourceId: "opening-contract-test",
       date: "2026-10-27",
       lines: journalLines,
-    }).success).toBe(false);
+    }).success).toBe(true);
     expect(accountingEntryReversalSchema.safeParse({
       id: "00000000-0000-4000-8000-000000000001",
       reason: "Correction",
-    }).success).toBe(false);
-    expect(accountingClosePeriodSchema.safeParse({ id: "2026-10" }).success).toBe(false);
-    expect(accountingClosePeriodSchema.safeParse({ id: "2026-10", ownerPin: "123456" }).success).toBe(true);
+    }).success).toBe(true);
+    expect(accountingClosePeriodSchema.safeParse({ id: "2026-10" }).success).toBe(true);
   });
 
-  it("requires owner authorization for backup export, configuration, verification, and restore", () => {
-    expect(backupAuthorizationSchema.safeParse({}).success).toBe(false);
-    expect(backupAuthorizationSchema.safeParse({ ownerPin: "not-numeric" }).success).toBe(false);
-    expect(backupAuthorizationSchema.safeParse({ ownerPin: "123456" }).success).toBe(true);
-    expect(backupScheduleSchema.safeParse({ frequency: "daily" }).success).toBe(false);
-    expect(backupScheduleSchema.safeParse({ frequency: "daily", ownerPin: "123456" }).success).toBe(true);
+  it("allows backup schedules without owner authorization", () => {
+    expect(backupScheduleSchema.safeParse({}).success).toBe(false);
+    expect(backupScheduleSchema.safeParse({ frequency: "daily" }).success).toBe(true);
   });
 
   it("accepts supported document paper formats and rejects unsupported formats", () => {
@@ -967,8 +962,7 @@ describe("fabric quality catalog", () => {
         direction: "add",
         quantityMeters: 10,
         reason: "Opening stock",
-        ownerPin: "123456",
-      }), "Owner");
+      }), "Staff");
 
       const invoiceInput = createInvoiceSchema.parse({
         items: [{ fabricId: fabric.id, quantityMeters: 2.5 }],
@@ -1077,8 +1071,7 @@ describe("fabric quality catalog", () => {
         name: "Cotton Mills",
         phone: "03000000000",
         openingBalance: 1000,
-        ownerPin: "123456",
-      }), "Owner");
+      }), "Staff");
       suppliers.receive(supplierPurchaseSchema.parse({
         supplierId: supplier.id,
         billNumber: "BILL-1001",
@@ -1279,7 +1272,6 @@ describe("fabric quality catalog", () => {
         openingBalance: 10_000,
         creditLimit: 35_000,
         paymentTermsDays: 30,
-        ownerPin: "123456",
       });
       const customer = customers.create({
         code: customerInput.code,
@@ -1289,7 +1281,7 @@ describe("fabric quality catalog", () => {
         openingBalance: customerInput.openingBalance,
         creditLimit: customerInput.creditLimit,
         paymentTermsDays: customerInput.paymentTermsDays,
-      }, "Owner");
+      }, "Staff");
       const otherCustomer = customers.create({
         code: "CUS-002",
         name: "Second Buyer",

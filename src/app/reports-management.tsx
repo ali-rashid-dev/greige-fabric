@@ -99,7 +99,6 @@ export default function ReportsManagement() {
   const [from, setFrom] = useState(monthStart(today));
   const [to, setTo] = useState(today);
   const [search, setSearch] = useState("");
-  const [ownerPin, setOwnerPin] = useState("");
   const [pageSize, setPageSize] = useState(50);
   const [page, setPage] = useState(1);
   const [accountCode, setAccountCode] = useState("1000");
@@ -140,7 +139,6 @@ export default function ReportsManagement() {
           to,
           search,
           pageSize,
-          ownerPin,
           ...(reportType === "general_ledger" ? { accountCode: selectedAccount } : {}),
         };
       }
@@ -210,13 +208,13 @@ export default function ReportsManagement() {
   }
 
   const pageCount = report ? Math.max(1, Math.ceil(report.totalRows / report.pageSize)) : 1;
-  const canRun = ownerPin.length >= 6 && from <= to && !loading;
+  const canRun = from <= to && !loading;
 
   return (
     <div className="reports-page">
       <section className="panel report-access-panel">
         <header className="panel-heading">
-          <div><h2>Owner-only financial reports</h2><p>Financial report access is verified with the owner PIN for every request.</p></div>
+          <div><h2>Financial reports</h2><p>Review sales, inventory, and accounting reports for the selected date range.</p></div>
         </header>
         <form className="report-filters" onSubmit={(event) => void runReport(event)}>
           <label>Report
@@ -252,7 +250,6 @@ export default function ReportsManagement() {
               {[25, 50, 100, 250, 500].map((size) => <option key={size} value={size}>{size}</option>)}
             </select>
           </label>
-          <label>Owner PIN <input required type="password" inputMode="numeric" minLength={6} maxLength={64} value={ownerPin} onChange={(event) => setOwnerPin(event.target.value)} /></label>
           <button className="primary-button" disabled={!canRun}>{loading ? "Generating…" : "Run report"}</button>
         </form>
         {error && <div className="error-banner" role="alert">{error}</div>}

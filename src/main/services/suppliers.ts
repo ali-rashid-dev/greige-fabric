@@ -184,7 +184,7 @@ export class SupplierService {
     };
   }
 
-  create(input: Omit<SupplierInput, "ownerPin">, authorizedUser: string): Supplier {
+  create(input: SupplierInput, authorizedUser: string): Supplier {
     const id = randomUUID();
     const now = new Date().toISOString();
     const openingBalance = Math.round(input.openingBalance * 100);
@@ -404,7 +404,7 @@ export class SupplierService {
     return this.get(input.supplierId);
   }
 
-  reversePayment(input: Omit<SupplierPaymentReversalInput, "ownerPin">, authorizedUser = "Owner"): SupplierDetails {
+  reversePayment(input: SupplierPaymentReversalInput, authorizedUser = "Staff"): SupplierDetails {
     let supplierId = "";
     const now = new Date().toISOString();
     const transaction = this.database.transaction(() => {
@@ -446,7 +446,7 @@ export class SupplierService {
     return this.get(supplierId);
   }
 
-  adjust(input: Omit<SupplierAdjustmentInput, "ownerPin">, authorizedUser: string): SupplierDetails {
+  adjust(input: SupplierAdjustmentInput, authorizedUser: string): SupplierDetails {
     if (!authorizedUser.trim()) {
       throw new FabricServiceError("AUTHORIZATION", "An authorized user is required for supplier adjustments.");
     }

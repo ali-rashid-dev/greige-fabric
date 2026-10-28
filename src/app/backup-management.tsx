@@ -21,7 +21,6 @@ export default function BackupManagement() {
   const [verification, setVerification] = useState<BackupVerification | null>(null);
   const [loading, setLoading] = useState(true);
   const [working, setWorking] = useState(false);
-  const [ownerPin, setOwnerPin] = useState("");
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
 
@@ -38,7 +37,7 @@ export default function BackupManagement() {
     setError("");
     setNotice("");
     try {
-      setSettings(resultData(await getDesktopApi().backups.setSchedule({ frequency, ownerPin })));
+      setSettings(resultData(await getDesktopApi().backups.setSchedule({ frequency })));
     } catch (scheduleError) {
       setError(scheduleError instanceof Error ? scheduleError.message : "Unable to update the backup schedule.");
     } finally {
@@ -51,7 +50,7 @@ export default function BackupManagement() {
     setError("");
     setNotice("");
     try {
-      setSettings(resultData(await getDesktopApi().backups.chooseDestination({ ownerPin })));
+      setSettings(resultData(await getDesktopApi().backups.chooseDestination()));
     } catch (destinationError) {
       setError(destinationError instanceof Error ? destinationError.message : "Unable to change the backup destination.");
     } finally {
@@ -64,7 +63,7 @@ export default function BackupManagement() {
     setError("");
     setNotice("");
     try {
-      const backup = resultData(await getDesktopApi().backups.create({ ownerPin }));
+      const backup = resultData(await getDesktopApi().backups.create());
       setSettings(resultData(await getDesktopApi().backups.settings()));
       setNotice(`Backup created and verified: ${backup.path}`);
     } catch (backupError) {
@@ -80,7 +79,7 @@ export default function BackupManagement() {
     setNotice("");
     setVerification(null);
     try {
-      const result = resultData(await getDesktopApi().backups.verify({ ownerPin }));
+      const result = resultData(await getDesktopApi().backups.verify());
       if (!result) return;
       setVerification(result);
       setNotice("Backup passed SQLite integrity and foreign-key checks.");
@@ -96,7 +95,7 @@ export default function BackupManagement() {
     setError("");
     setNotice("");
     try {
-      const result = resultData(await getDesktopApi().backups.restore({ ownerPin }));
+      const result = resultData(await getDesktopApi().backups.restore());
       if (result.restarting) setNotice("Restore staged. The application is restarting.");
     } catch (restoreError) {
       setError(restoreError instanceof Error ? restoreError.message : "Unable to stage this database restore.");
@@ -111,7 +110,7 @@ export default function BackupManagement() {
         <header className="panel-heading">
           <div>
             <h2>Backup & recovery</h2>
-            <p>Owner authorization is required to create, schedule, verify, or restore database backups.</p>
+            <p>Create, schedule, verify, or restore database backups.</p>
           </div>
         </header>
         {error && <div className="error-banner" role="alert">{error}</div>}
@@ -119,22 +118,17 @@ export default function BackupManagement() {
         {settings?.lastError && <div className="error-banner" role="alert">
           Latest scheduled backup failed: {settings.lastError}
         </div>}
-        <label className="backup-owner-pin">Owner PIN
-          <input type="password" inputMode="numeric" minLength={6} maxLength={64}
-            autoComplete="current-password" value={ownerPin}
-            onChange={(event) => setOwnerPin(event.target.value)} />
-        </label>
         {loading ? <p className="empty-state">Loading backup settings…</p> : settings && (
           <div className="backup-settings">
             <div className="backup-setting">
               <div><strong>Backup destination</strong><span>{settings.destinationDirectory}</span></div>
-              <button type="button" className="secondary-button" disabled={working || ownerPin.length < 6} onClick={() => void chooseDestination()}>
+              <button type="button" className="secondary-button" disabled={working} onClick={() => void chooseDestination()}>
                 Choose folder
               </button>
             </div>
             <div className="backup-setting">
               <div><strong>Scheduled backups</strong><span>Runs while the application is open; missed backups run on the next launch.</span></div>
-              <select aria-label="Scheduled backup frequency" disabled={working || ownerPin.length < 6} value={settings.frequency}
+              <select aria-label="Scheduled backup frequency" disabled={working} value={settings.frequency}
                 onChange={(event) => void changeSchedule(event.target.value as BackupFrequency)}>
                 <option value="disabled">Off</option>
                 <option value="daily">Daily</option>
@@ -146,13 +140,13 @@ export default function BackupManagement() {
               <div><strong>Next scheduled backup</strong><span>{formatDate(settings.nextBackupAt)}</span></div>
             </div>
             <div className="backup-actions">
-              <button type="button" className="primary-button" disabled={working || ownerPin.length < 6} onClick={() => void createBackup()}>
+              <button type="button" className="primary-button" disabled={working} onClick={() => void createBackup()}>
                 {working ? "Working…" : "Back up now"}
               </button>
-              <button type="button" className="secondary-button" disabled={working || ownerPin.length < 6} onClick={() => void verifyBackup()}>
+              <button type="button" className="secondary-button" disabled={working} onClick={() => void verifyBackup()}>
                 Verify a backup
               </button>
-              <button type="button" className="danger-button" disabled={working || ownerPin.length < 6} onClick={() => void restoreBackup()}>
+              <button type="button" className="danger-button" disabled={working} onClick={() => void restoreBackup()}>
                 Restore backup…
               </button>
             </div>

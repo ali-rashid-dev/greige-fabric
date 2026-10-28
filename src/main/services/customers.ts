@@ -155,7 +155,7 @@ export class CustomerService {
     return rows.map(mapCustomer);
   }
 
-  create(input: Omit<CustomerInput, "ownerPin">, authorizedUser: string): Customer {
+  create(input: CustomerInput, authorizedUser: string): Customer {
     const id = randomUUID();
     const now = new Date().toISOString();
     const openingBalance = Math.round(input.openingBalance * 100);
@@ -326,7 +326,7 @@ export class CustomerService {
     return this.get(input.customerId);
   }
 
-  reverseReceipt(input: Omit<CustomerReceiptReversalInput, "ownerPin">, authorizedUser = "Owner"): CustomerDetails {
+  reverseReceipt(input: CustomerReceiptReversalInput, authorizedUser = "Staff"): CustomerDetails {
     const now = new Date().toISOString();
     const transaction = this.database.transaction(() => {
       const receipt = this.database.prepare(`

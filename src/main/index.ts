@@ -6,7 +6,6 @@ import { registerIpcHandlers } from "./ipc/handlers";
 import { FabricService } from "./services/fabrics";
 import { InventoryService } from "./services/inventory";
 import { SupplierService } from "./services/suppliers";
-import { OwnerAuthService } from "./services/owner-auth";
 import { CustomerService } from "./services/customers";
 import { AccountingService } from "./services/accounting";
 import { ExpenseService } from "./services/expenses";
@@ -175,7 +174,6 @@ app.whenReady().then(async () => {
       new FabricService(database),
       new InventoryService(database),
       new SupplierService(database),
-      new OwnerAuthService(path.join(app.getPath("userData"), "owner-pin.enc")),
       new CustomerService(database),
       new AccountingService(database),
       new ExpenseService(database),

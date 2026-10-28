@@ -42,7 +42,7 @@ interface ValuationRow {
 export class InventoryService {
   constructor(private readonly database: Database.Database) {}
 
-  openStock(input: Omit<OpeningStockInput, "ownerPin">, authorizedUser: string): void {
+  openStock(input: OpeningStockInput, authorizedUser: string): void {
     const quantityMm = Math.round(input.quantityMeters * 1000);
     const unitCostMinor = Math.round(input.unitCost * 100);
     const createdAt = new Date().toISOString();
@@ -70,7 +70,7 @@ export class InventoryService {
     transaction.immediate();
   }
 
-  adjustStock(input: Omit<StockAdjustmentInput, "ownerPin">, authorizedUser: string): void {
+  adjustStock(input: StockAdjustmentInput, authorizedUser: string): void {
     if (!authorizedUser.trim()) {
       throw new FabricServiceError("AUTHORIZATION", "An authorized user is required for stock adjustments.");
     }

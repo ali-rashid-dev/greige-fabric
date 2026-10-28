@@ -5,14 +5,14 @@ import type { DesktopApi } from "../shared/types";
 const api: DesktopApi = {
   backups: {
     settings: () => ipcRenderer.invoke(channels.backupSettings),
-    create: (input) => ipcRenderer.invoke(channels.backupCreate, input),
-    chooseDestination: (input) => ipcRenderer.invoke(channels.backupChooseDestination, input),
+    create: () => ipcRenderer.invoke(channels.backupCreate),
+    chooseDestination: () => ipcRenderer.invoke(channels.backupChooseDestination),
     setSchedule: (input) => ipcRenderer.invoke(channels.backupSetSchedule, input),
-    verify: (input) => ipcRenderer.invoke(channels.backupVerify, input),
-    restore: (input) => ipcRenderer.invoke(channels.backupRestore, input),
+    verify: () => ipcRenderer.invoke(channels.backupVerify),
+    restore: () => ipcRenderer.invoke(channels.backupRestore),
   },
   returns: {
-    data: (input) => ipcRenderer.invoke(channels.returnsData, input),
+    data: () => ipcRenderer.invoke(channels.returnsData),
     createSales: (input) => ipcRenderer.invoke(channels.createSalesReturn, input),
     createPurchase: (input) => ipcRenderer.invoke(channels.createPurchaseReturn, input),
     reverse: (input) => ipcRenderer.invoke(channels.reverseReturn, input),
@@ -38,10 +38,6 @@ const api: DesktopApi = {
     report: () => ipcRenderer.invoke(channels.inventoryReport),
     movements: () => ipcRenderer.invoke(channels.inventoryMovements),
     opening: (input) => ipcRenderer.invoke(channels.inventoryOpening, input),
-  },
-  auth: {
-    pinStatus: () => ipcRenderer.invoke(channels.pinStatus),
-    setPin: (input) => ipcRenderer.invoke(channels.setPin, input),
   },
   suppliers: {
     list: (input) => ipcRenderer.invoke(channels.listSuppliers, input ?? {}),

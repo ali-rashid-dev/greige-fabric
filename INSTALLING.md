@@ -13,10 +13,10 @@ this repository does not currently publish downloads automatically.
 - Close Greige Fabric POS before installing an update.
 - Keep your backup files outside the application installation folder.
 
-The database and owner PIN are stored in the operating system's per-user
-application data directory, not alongside the installed program. Windows
-uninstall is configured to preserve application data. On startup, the app
-creates a snapshot before applying pending database migrations.
+The database is stored in the operating system's per-user application data
+directory, not alongside the installed program. Windows uninstall is
+configured to preserve application data. On startup, the app creates a
+snapshot before applying pending database migrations.
 
 ## Windows
 
@@ -126,8 +126,8 @@ production package, use the platform-specific build command above.
 
 If an upgrade or migration fails, preserve the database and backup files and
 contact the release maintainer before retrying. To restore a backup, open
-**Backup & recovery**, enter the owner PIN, select **Restore backup**, confirm
-the operation, and allow the application to restart. The current database is
-preserved before the restore is applied.
+**Backup & recovery**, select **Restore backup**, confirm the operation, and
+allow the application to restart. The current database is preserved before
+the restore is applied.
 
 For release validation, see the [Windows release checklist in the README](./README.md#windows-release-validation).

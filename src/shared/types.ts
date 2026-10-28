@@ -24,7 +24,6 @@ import type {
   PartnerTransactionInput,
   PartnerTransactionHistoryInput,
   PartnerTransactionReversalInput,
-  ReturnDataInput,
   SalesReturnInput,
   PurchaseReturnInput,
   ReturnReversalInput,
@@ -688,14 +687,14 @@ export interface PartnerStatement {
 export interface DesktopApi {
   backups: {
     settings(): Promise<IpcResult<BackupSettings>>;
-    create(input: { ownerPin: string }): Promise<IpcResult<{ path: string; createdAt: string }>>;
-    chooseDestination(input: { ownerPin: string }): Promise<IpcResult<BackupSettings>>;
-    setSchedule(input: { frequency: BackupFrequency; ownerPin: string }): Promise<IpcResult<BackupSettings>>;
-    verify(input: { ownerPin: string }): Promise<IpcResult<BackupVerification | null>>;
-    restore(input: { ownerPin: string }): Promise<IpcResult<{ restarting: boolean }>>;
+    create(): Promise<IpcResult<{ path: string; createdAt: string }>>;
+    chooseDestination(): Promise<IpcResult<BackupSettings>>;
+    setSchedule(input: { frequency: BackupFrequency }): Promise<IpcResult<BackupSettings>>;
+    verify(): Promise<IpcResult<BackupVerification | null>>;
+    restore(): Promise<IpcResult<{ restarting: boolean }>>;
   };
   returns: {
-    data(input: ReturnDataInput): Promise<IpcResult<ReturnData>>;
+    data(): Promise<IpcResult<ReturnData>>;
     createSales(input: SalesReturnInput): Promise<IpcResult<ReturnRecord>>;
     createPurchase(input: PurchaseReturnInput): Promise<IpcResult<ReturnRecord>>;
     reverse(input: ReturnReversalInput): Promise<IpcResult<ReturnRecord>>;
@@ -721,10 +720,6 @@ export interface DesktopApi {
     report(): Promise<IpcResult<InventoryReport>>;
     movements(): Promise<IpcResult<InventoryMovement[]>>;
     opening(input: OpeningStockInput): Promise<IpcResult<Fabric>>;
-  };
-  auth: {
-    pinStatus(): Promise<IpcResult<{ configured: boolean }>>;
-    setPin(input: { pin: string; confirmation: string }): Promise<IpcResult<{ configured: boolean }>>;
   };
   suppliers: {
     list(input?: SupplierListInput): Promise<IpcResult<Supplier[]>>;

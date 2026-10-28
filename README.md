@@ -21,7 +21,7 @@ snapshots, so later product edits do not rewrite past sales.
 ## Inventory
 
 Stock is stored as integer millimeters and displayed in meters. Opening stock,
-supplier receipts, sales, and authorized adjustments all use the inventory
+supplier receipts, sales, and manual adjustments all use the inventory
 service, which updates the balance and movement history in one SQLite
 transaction. Movements record product, signed quantity, type, reference,
 timestamp, and actor. Inventory valuation uses the persisted stock value and
@@ -29,16 +29,14 @@ weighted-average cost; low-stock and movement reports are available in the
 Inventory screen.
 
 Manual inventory and supplier-balance adjustments, plus nonzero supplier
-opening balances, require an owner PIN. The PIN is encrypted using Electron
-`safeStorage` and the operating system keychain; these operations fail closed
-when secure storage is unavailable or the PIN is not configured. On Linux,
-GNOME Keyring or KDE Wallet must be available.
+opening balances, do not require PIN authorization. These operations remain
+validated and recorded in the inventory, accounting, and audit history.
 
 ## Suppliers and Accounts Payable
 
 Supplier records include a unique code, contact details, and an AP-derived
 outstanding balance. Supplier opening balances, purchase bills, payments, and
-authorized adjustments are posted to a double-entry ledger. Receiving a bill
+manual adjustments are posted to a double-entry ledger. Receiving a bill
 records its supplier invoice number/reference and purchase date, inventory
 movement, weighted-average cost, and accounting posting together. Credit bills
 post to AP; cash and bank bills post to the selected payment account. Partial
@@ -70,7 +68,7 @@ terms does not recalculate old allocations. Profit allocations transfer value
 from the partner allocation equity account to profit distributions payable;
 losses reduce partner capital under the same effective sharing terms. The module
 uses validated, operation-specific Electron IPC calls and does not add a login
-or require an owner PIN.
+or require a PIN authorization step.
 
 Sales invoices are recorded against Accounts Receivable; sales revenue and cost
 of goods sold are also posted to the ledger. Tax rules, receipt printing,
@@ -154,7 +152,7 @@ installer and printer on Windows.
 - [ ] Confirm sales, purchases, and accounting work with networking disabled.
 - [ ] Print an invoice on the shop's target printer and compare its totals.
 - [ ] Create a backup, restore it, and confirm the application recovers the records.
-- [x] Verify write permissions in main-process IPC handlers; protected operations validate owner authorization.
+- [x] Validate requests and trusted renderer frames in main-process IPC handlers.
 - [x] Verify production startup loads the exported renderer from disk, not the development server.
 - [x] Run automated tests for transactional inventory/accounting behavior and database migration recovery.
 

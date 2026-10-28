@@ -367,7 +367,7 @@ export class AccountingService {
       if (result.changes === 0) {
         throw new FabricServiceError("CONFLICT", "This accounting period is already closed.");
       }
-      writeAuditLog(this.database, "Owner", "accounting_period_closed", "accounting_period", id, `Closed period ${id}`, now);
+      writeAuditLog(this.database, "Staff", "accounting_period_closed", "accounting_period", id, `Closed period ${id}`, now);
     });
     close.immediate();
     return this.listPeriods().find((period) => period.id === id)!;
@@ -508,7 +508,7 @@ export class AccountingService {
         input.reference,
         createdAt,
         input.lines,
-        "Owner",
+        "Staff",
         input.sourceId,
       );
       if (!this.database.prepare(
@@ -516,7 +516,7 @@ export class AccountingService {
       ).get(`manual_journal:${input.sourceId}`)) {
         throw new FabricServiceError("VALIDATION", "A manual journal entry cannot have a zero amount.");
       }
-      writeAuditLog(this.database, "Owner", "manual_journal", "journal", input.sourceId, input.reference, auditedAt);
+      writeAuditLog(this.database, "Staff", "manual_journal", "journal", input.sourceId, input.reference, auditedAt);
     });
     post.immediate();
     const row = this.database.prepare(
@@ -540,7 +540,7 @@ export class AccountingService {
         "Opening balances",
         createdAt,
         input.lines,
-        "Owner",
+        "Staff",
         input.sourceId,
       );
       if (!this.database.prepare(
@@ -548,7 +548,7 @@ export class AccountingService {
       ).get(`opening_balance:${input.sourceId}`)) {
         throw new FabricServiceError("VALIDATION", "Opening balances cannot have a zero amount.");
       }
-      writeAuditLog(this.database, "Owner", "opening_balance", "journal", input.sourceId, "Opening balances", auditedAt);
+      writeAuditLog(this.database, "Staff", "opening_balance", "journal", input.sourceId, "Opening balances", auditedAt);
     });
     post.immediate();
     const row = this.database.prepare(
@@ -608,12 +608,12 @@ export class AccountingService {
         original.reference,
         now,
         lines,
-        "Owner",
+        "Staff",
         `reversal:${id}`,
         id,
         reason,
       );
-      writeAuditLog(this.database, "Owner", "journal_reversal", "journal", id, reason, now);
+      writeAuditLog(this.database, "Staff", "journal_reversal", "journal", id, reason, now);
     });
     reverse.immediate();
     const row = this.database.prepare(

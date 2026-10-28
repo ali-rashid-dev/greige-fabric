@@ -22,7 +22,6 @@ function formatMoney(minor: number): string {
 }
 
 export default function ReturnsManagement() {
-  const [ownerPin, setOwnerPin] = useState("");
   const [data, setData] = useState<ReturnData | null>(null);
   const [paymentAccounts, setPaymentAccounts] = useState<PaymentAccount[]>([]);
   const [kind, setKind] = useState<ReturnKind>("sales");
@@ -51,12 +50,12 @@ export default function ReturnsManagement() {
     [data, purchaseId],
   );
 
-  async function loadData(pin = ownerPin) {
+  async function loadData() {
     setLoading(true);
     setError("");
     try {
       const [returnsResult, accountsResult] = await Promise.all([
-        getDesktopApi().returns.data({ ownerPin: pin }),
+        getDesktopApi().returns.data(),
         getDesktopApi().customers.paymentAccounts(),
       ]);
       const nextData = resultData(returnsResult);
@@ -99,7 +98,6 @@ export default function ReturnsManagement() {
         ...(salesSettlement === "refund" ? { paymentAccountCode } : {}),
         reason,
         items,
-        ownerPin,
       }));
       setNotice(`Sales return ${result.returnNumber} posted for ${formatMoney(result.totalMinor)}.`);
       setReason("");
@@ -130,7 +128,6 @@ export default function ReturnsManagement() {
         ...(purchaseSettlement === "refund" ? { paymentAccountCode } : {}),
         reason,
         items,
-        ownerPin,
       }));
       setNotice(`Purchase return ${result.returnNumber} posted for ${formatMoney(result.totalMinor)}.`);
       setReason("");
@@ -154,7 +151,6 @@ export default function ReturnsManagement() {
         returnId: reversing.id,
         returnType: reversing.returnType,
         reason: reversalReason,
-        ownerPin,
       }));
       setNotice(`${result.returnNumber} reversed.`);
       setReversing(null);
@@ -173,17 +169,13 @@ export default function ReturnsManagement() {
     <div className="returns-page">
       <section className="panel">
         <header className="panel-heading">
-          <div><h2>Returns, corrections & audit</h2><p>Owner authorization is required to view records and post or reverse a return.</p></div>
+          <div><h2>Returns, corrections & audit</h2><p>Review and record sales or purchase returns, corrections, and audit history.</p></div>
         </header>
         <form className="expense-form" onSubmit={(event) => {
           event.preventDefault();
           void loadData();
         }}>
-          <label>Owner PIN
-            <input required type="password" inputMode="numeric" minLength={6} maxLength={64}
-              value={ownerPin} onChange={(event) => setOwnerPin(event.target.value)} />
-          </label>
-          <button className="secondary-button" disabled={loading || ownerPin.length < 6}>
+          <button className="secondary-button" disabled={loading}>
             {loading ? "Loading…" : "Load returns & audit"}
           </button>
         </form>

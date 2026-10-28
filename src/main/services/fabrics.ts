@@ -256,7 +256,7 @@ export class FabricService {
     return this.getFabric(id);
   }
 
-  adjustStock(input: Omit<StockAdjustmentInput, "ownerPin">, authorizedUser: string): Fabric {
+  adjustStock(input: StockAdjustmentInput, authorizedUser: string): Fabric {
     this.inventory.adjustStock(input, authorizedUser);
     return this.getFabric(input.fabricId);
   }

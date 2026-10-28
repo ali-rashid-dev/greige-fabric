@@ -122,7 +122,6 @@ export default function Home() {
   const [adjustmentDirection, setAdjustmentDirection] = useState<"add" | "remove">("add");
   const [adjustmentQuantity, setAdjustmentQuantity] = useState("");
   const [adjustmentReason, setAdjustmentReason] = useState("");
-  const [adjustmentPin, setAdjustmentPin] = useState("");
   const [inventoryReport, setInventoryReport] = useState<InventoryReport | null>(null);
   const [movements, setMovements] = useState<InventoryMovement[]>([]);
   const [inventoryView, setInventoryView] = useState<InventoryView>("overview");
@@ -133,7 +132,6 @@ export default function Home() {
     unitCost: "",
     reference: "",
     reason: "",
-    ownerPin: "",
   });
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [supplierDetails, setSupplierDetails] = useState<SupplierDetails | null>(null);
@@ -148,7 +146,6 @@ export default function Home() {
     contactName: "",
     email: "",
     openingBalance: "",
-    ownerPin: "",
   });
   const [purchaseOpen, setPurchaseOpen] = useState(false);
   const [purchaseValues, setPurchaseValues] = useState({
@@ -177,16 +174,12 @@ export default function Home() {
     direction: "increase" as "increase" | "decrease",
     amount: "",
     reason: "",
-    ownerPin: "",
   });
   const [statement, setStatement] = useState<SupplierStatement | null>(null);
   const [statementDates, setStatementDates] = useState({
     from: new Date().toISOString().slice(0, 10),
     to: new Date().toISOString().slice(0, 10),
   });
-  const [pinConfigured, setPinConfigured] = useState(false);
-  const [pinSetupOpen, setPinSetupOpen] = useState(false);
-  const [pinSetupValues, setPinSetupValues] = useState({ pin: "", confirmation: "" });
   const [apReconciliation, setApReconciliation] = useState<{ controlMinor: number; subledgerMinor: number; differenceMinor: number } | null>(null);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [customerSearch, setCustomerSearch] = useState("");
@@ -202,7 +195,6 @@ export default function Home() {
     openingBalance: "",
     creditLimit: "",
     paymentTermsDays: "0",
-    ownerPin: "",
   });
   const [receiptOpen, setReceiptOpen] = useState(false);
   const [receiptValues, setReceiptValues] = useState({
@@ -286,13 +278,6 @@ export default function Home() {
     setApReconciliation(reconciliationResult.data);
     setCustomers(customerResult.data);
     setPaymentAccounts(accountResult.data);
-
-    const pinResult = await getDesktopApi().auth.pinStatus();
-    if (pinResult.ok) setPinConfigured(pinResult.data.configured);
-    else {
-      setPinConfigured(false);
-      setError(pinResult.error.message);
-    }
   }
 
   useEffect(() => {
@@ -342,7 +327,6 @@ export default function Home() {
     setAdjustmentDirection("add");
     setAdjustmentQuantity("");
     setAdjustmentReason("");
-    setAdjustmentPin("");
     setError("");
   }
 
@@ -449,12 +433,10 @@ export default function Home() {
         direction: adjustmentDirection,
         quantityMeters: Number(adjustmentQuantity),
         reason: adjustmentReason,
-        ownerPin: adjustmentPin,
       });
       if (!result.ok) throw new Error(result.error.message);
       await Promise.all([refreshCatalog(), refreshManagement()]);
       setAdjustment(null);
-      setAdjustmentPin("");
       setNotice("Stock movement recorded.");
       setTimeout(() => setNotice(""), 3000);
     } catch (adjustError) {
@@ -475,12 +457,11 @@ export default function Home() {
         unitCost: Number(openingValues.unitCost),
         reference: openingValues.reference,
         reason: openingValues.reason,
-        ownerPin: openingValues.ownerPin,
       });
       if (!result.ok) throw new Error(result.error.message);
       await Promise.all([refreshCatalog(), refreshManagement()]);
       setOpeningStockOpen(false);
-      setOpeningValues({ fabricId: "", quantityMeters: "", unitCost: "", reference: "", reason: "", ownerPin: "" });
+      setOpeningValues({ fabricId: "", quantityMeters: "", unitCost: "", reference: "", reason: "" });
       setNotice("Opening stock and inventory value recorded.");
     } catch (openingError) {
       setError(openingError instanceof Error ? openingError.message : "Unable to record opening stock.");
@@ -511,7 +492,6 @@ export default function Home() {
       contactName: supplier.contactName,
       email: supplier.email,
       openingBalance: "",
-      ownerPin: "",
     } : {
       code: "",
       name: "",
@@ -520,7 +500,6 @@ export default function Home() {
       contactName: "",
       email: "",
       openingBalance: "",
-      ownerPin: "",
     });
     setSupplierFormOpen(true);
     setError("");
@@ -549,7 +528,6 @@ export default function Home() {
           contactName: supplierValues.contactName,
           email: supplierValues.email,
           openingBalance: Number(supplierValues.openingBalance || 0),
-          ownerPin: supplierValues.ownerPin,
         });
       if (!result.ok) throw new Error(result.error.message);
       await refreshManagement();
@@ -572,7 +550,6 @@ export default function Home() {
       openingBalance: "",
       creditLimit: String(customer.creditLimitMinor / 100),
       paymentTermsDays: String(customer.paymentTermsDays),
-      ownerPin: "",
     } : {
       code: "",
       name: "",
@@ -581,7 +558,6 @@ export default function Home() {
       openingBalance: "",
       creditLimit: "",
       paymentTermsDays: "0",
-      ownerPin: "",
     });
     setCustomerFormOpen(true);
     setError("");
@@ -605,7 +581,6 @@ export default function Home() {
         : await getDesktopApi().customers.create({
           ...customerInput,
           openingBalance: Number(customerValues.openingBalance || 0),
-          ownerPin: customerValues.ownerPin,
         });
       if (!result.ok) throw new Error(result.error.message);
       await refreshManagement();
@@ -676,12 +651,6 @@ export default function Home() {
       setError("A reversal reason is required.");
       return;
     }
-    const ownerPin = window.prompt("Enter the owner PIN to authorize this reversal.");
-    if (ownerPin === null) return;
-    if (!/^\d{6,64}$/.test(ownerPin)) {
-      setError("Enter a valid owner PIN.");
-      return;
-    }
     if (!customerDetails) return;
     setSaving(true);
     setError("");
@@ -689,7 +658,6 @@ export default function Home() {
       const result = await getDesktopApi().customers.reverseReceipt({
         receiptId: receipt.id,
         reason,
-        ownerPin,
       });
       if (!result.ok) throw new Error(result.error.message);
       setCustomerDetails(result.data);
@@ -816,12 +784,6 @@ export default function Home() {
       setError("A reversal reason is required.");
       return;
     }
-    const ownerPin = window.prompt("Enter the owner PIN to authorize this reversal.");
-    if (ownerPin === null) return;
-    if (!/^\d{6,64}$/.test(ownerPin)) {
-      setError("Enter a valid owner PIN.");
-      return;
-    }
     if (!supplierDetails) return;
     setSaving(true);
     setError("");
@@ -829,7 +791,6 @@ export default function Home() {
       const result = await getDesktopApi().suppliers.reversePayment({
         paymentId: payment.id,
         reason,
-        ownerPin,
       });
       if (!result.ok) throw new Error(result.error.message);
       setSupplierDetails(result.data);
@@ -857,13 +818,12 @@ export default function Home() {
         direction: supplierAdjustmentValues.direction,
         amount: Number(supplierAdjustmentValues.amount),
         reason: supplierAdjustmentValues.reason,
-        ownerPin: supplierAdjustmentValues.ownerPin,
       });
       if (!result.ok) throw new Error(result.error.message);
       setSupplierDetails(result.data);
       await refreshManagement();
       setSupplierAdjustmentOpen(false);
-      setSupplierAdjustmentValues({ direction: "increase", amount: "", reason: "", ownerPin: "" });
+      setSupplierAdjustmentValues({ direction: "increase", amount: "", reason: "" });
     } catch (adjustError) {
       setError(adjustError instanceof Error ? adjustError.message : "Unable to adjust supplier balance.");
     } finally {
@@ -885,24 +845,6 @@ export default function Home() {
       else setStatement(result.data);
     } catch (statementError) {
       setError(statementError instanceof Error ? statementError.message : "Unable to generate supplier statement.");
-    }
-  }
-
-  async function saveOwnerPin(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setSaving(true);
-    setError("");
-    try {
-      const result = await getDesktopApi().auth.setPin(pinSetupValues);
-      if (!result.ok) throw new Error(result.error.message);
-      setPinConfigured(result.data.configured);
-      setPinSetupOpen(false);
-      setPinSetupValues({ pin: "", confirmation: "" });
-      setNotice("Owner PIN set up using secure device storage.");
-    } catch (pinError) {
-      setError(pinError instanceof Error ? pinError.message : "Unable to set up owner PIN.");
-    } finally {
-      setSaving(false);
     }
   }
 
@@ -992,23 +934,20 @@ export default function Home() {
           )}
           {section === "stock" && (
             <div className="topbar-actions">
-              {!pinConfigured && <button className="secondary-button" onClick={() => setPinSetupOpen(true)}>Set up owner PIN</button>}
               <button className="primary-button" onClick={() => {
-                setOpeningValues({ fabricId: "", quantityMeters: "", unitCost: "", reference: "", reason: "", ownerPin: "" });
+                setOpeningValues({ fabricId: "", quantityMeters: "", unitCost: "", reference: "", reason: "" });
                 setOpeningStockOpen(true);
               }}><span>+</span> Opening stock</button>
             </div>
           )}
           {section === "suppliers" && (
             <div className="topbar-actions">
-              {!pinConfigured && <button className="secondary-button" onClick={() => setPinSetupOpen(true)}>Set up owner PIN</button>}
               <button className="primary-button" onClick={() => openSupplierForm()}><span>+</span> Add supplier</button>
             </div>
           )}
           {section === "customers" && (
             <div className="topbar-actions">
               {customerDetails && <button className="secondary-button" onClick={() => { setCustomerDetails(null); setCustomerStatement(null); }}>Back to customers</button>}
-              {!customerDetails && !pinConfigured && <button className="secondary-button" onClick={() => setPinSetupOpen(true)}>Set up owner PIN</button>}
               {!customerDetails && <button className="primary-button" onClick={() => openCustomerForm()}><span>+</span> Add customer</button>}
             </div>
           )}
@@ -1081,7 +1020,6 @@ export default function Home() {
               </div>
               {inventoryView === "overview" && (
                 <>
-                  {!pinConfigured && <div className="error-banner" role="status">Manual stock changes require an owner PIN stored in the operating system keychain.</div>}
                   <div className="section-heading"><div><h2>Stock by fabric</h2><p>All quantities are stored in millimeters and displayed in meters.</p></div></div>
                   <div className="panel"><FabricTable fabrics={stock?.fabrics ?? []} loading={loading} stockView onDetails={openDetails} onEdit={openEditForm} onAdjust={openAdjustment} /></div>
                 </>
@@ -1355,7 +1293,6 @@ export default function Home() {
               <FormField label="Credit limit" required hint="Set to 0 to disallow credit sales."><div className="input-prefix"><span>PKR</span><input required type="number" min="0" step="0.01" value={customerValues.creditLimit} onChange={(event) => setCustomerValues({ ...customerValues, creditLimit: event.target.value })} /></div></FormField>
               <FormField label="Payment terms" required><div className="input-suffix"><input required type="number" min="0" max="3650" step="1" value={customerValues.paymentTermsDays} onChange={(event) => setCustomerValues({ ...customerValues, paymentTermsDays: event.target.value })} /><span>days</span></div></FormField>
               {!customerEditing && <FormField label="Opening receivable" hint="Posted to Accounts Receivable and Opening Balance Equity."><div className="input-prefix"><span>PKR</span><input type="number" min="0" step="0.01" value={customerValues.openingBalance} onChange={(event) => setCustomerValues({ ...customerValues, openingBalance: event.target.value })} /></div></FormField>}
-              {!customerEditing && Number(customerValues.openingBalance) > 0 && <FormField label="Owner PIN" required hint={pinConfigured ? "Authorizes this opening receivable." : "Set up an owner PIN before recording an opening balance."}><input required type="password" inputMode="numeric" minLength={6} value={customerValues.ownerPin} onChange={(event) => setCustomerValues({ ...customerValues, ownerPin: event.target.value })} /></FormField>}
             </div>
             <div className="modal-actions"><button className="secondary-button" type="button" onClick={() => setCustomerFormOpen(false)}>Cancel</button><button className="primary-button" disabled={saving}>{saving ? "Saving…" : customerEditing ? "Save changes" : "Add customer"}</button></div>
           </form>
@@ -1433,9 +1370,6 @@ export default function Home() {
             <FormField label="Reason" required>
               <input required value={adjustmentReason} onChange={(event) => setAdjustmentReason(event.target.value)} maxLength={160} placeholder="Opening stock, correction…" />
             </FormField>
-            <FormField label="Owner PIN" required hint="Required for all manual inventory adjustments.">
-              <input required type="password" inputMode="numeric" autoComplete="current-password" value={adjustmentPin} onChange={(event) => setAdjustmentPin(event.target.value)} />
-            </FormField>
             <div className="modal-actions"><button className="secondary-button" type="button" onClick={() => setAdjustment(null)}>Cancel</button><button className="primary-button" type="submit" disabled={saving}>{saving ? "Saving…" : "Save movement"}</button></div>
           </form>
         </Modal>
@@ -1455,20 +1389,7 @@ export default function Home() {
             <FormField label="Purchase cost" required><div className="input-prefix"><span>PKR</span><input required type="number" min="0" step="0.01" value={openingValues.unitCost} onChange={(event) => setOpeningValues({ ...openingValues, unitCost: event.target.value })} /></div></FormField>
             <FormField label="Reference" required><input required maxLength={100} value={openingValues.reference} onChange={(event) => setOpeningValues({ ...openingValues, reference: event.target.value })} placeholder="Opening stock entry" /></FormField>
             <FormField label="Reason" required><input required maxLength={160} value={openingValues.reason} onChange={(event) => setOpeningValues({ ...openingValues, reason: event.target.value })} /></FormField>
-            <FormField label="Owner PIN" required><input required type="password" inputMode="numeric" value={openingValues.ownerPin} onChange={(event) => setOpeningValues({ ...openingValues, ownerPin: event.target.value })} /></FormField>
             <div className="modal-actions"><button className="secondary-button" type="button" onClick={() => setOpeningStockOpen(false)}>Cancel</button><button className="primary-button" disabled={saving}>{saving ? "Saving…" : "Record stock"}</button></div>
-          </form>
-        </Modal>
-      )}
-
-      {pinSetupOpen && (
-        <Modal title="Set up owner PIN" onClose={() => setPinSetupOpen(false)}>
-          <p className="muted-message">Choose a numeric PIN of at least 6 digits. It is encrypted with the operating system keychain and is never stored in the renderer or database.</p>
-          {error && <div className="error-banner modal-error" role="alert">{error}</div>}
-          <form className="adjustment-form" onSubmit={(event) => void saveOwnerPin(event)}>
-            <FormField label="Owner PIN" required><input required type="password" inputMode="numeric" autoComplete="new-password" minLength={6} value={pinSetupValues.pin} onChange={(event) => setPinSetupValues({ ...pinSetupValues, pin: event.target.value })} /></FormField>
-            <FormField label="Confirm PIN" required><input required type="password" inputMode="numeric" autoComplete="new-password" minLength={6} value={pinSetupValues.confirmation} onChange={(event) => setPinSetupValues({ ...pinSetupValues, confirmation: event.target.value })} /></FormField>
-            <div className="modal-actions"><button className="secondary-button" type="button" onClick={() => setPinSetupOpen(false)}>Cancel</button><button className="primary-button" disabled={saving}>{saving ? "Saving…" : "Set owner PIN"}</button></div>
           </form>
         </Modal>
       )}
@@ -1485,7 +1406,6 @@ export default function Home() {
               <FormField label="Email"><input type="email" maxLength={160} value={supplierValues.email} onChange={(event) => setSupplierValues({ ...supplierValues, email: event.target.value })} /></FormField>
               <FormField label="Address"><input maxLength={240} value={supplierValues.address} onChange={(event) => setSupplierValues({ ...supplierValues, address: event.target.value })} /></FormField>
               {!supplierEditing && <FormField label="Opening balance" hint="Credit payable, posted to the AP control account."><div className="input-prefix"><span>PKR</span><input type="number" min="0" step="0.01" value={supplierValues.openingBalance} onChange={(event) => setSupplierValues({ ...supplierValues, openingBalance: event.target.value })} /></div></FormField>}
-              {!supplierEditing && Number(supplierValues.openingBalance) > 0 && <FormField label="Owner PIN" required hint="Required to authorize an opening payable balance."><input required type="password" inputMode="numeric" minLength={6} value={supplierValues.ownerPin} onChange={(event) => setSupplierValues({ ...supplierValues, ownerPin: event.target.value })} /></FormField>}
             </div>
             <div className="modal-actions"><button className="secondary-button" type="button" onClick={() => setSupplierFormOpen(false)}>Cancel</button><button className="primary-button" disabled={saving}>{saving ? "Saving…" : supplierEditing ? "Save changes" : "Add supplier"}</button></div>
           </form>
@@ -1608,7 +1528,6 @@ export default function Home() {
             <FormField label="Adjustment" required><select value={supplierAdjustmentValues.direction} onChange={(event) => setSupplierAdjustmentValues({ ...supplierAdjustmentValues, direction: event.target.value as "increase" | "decrease" })}><option value="increase">Increase payable</option><option value="decrease">Decrease payable</option></select></FormField>
             <FormField label="Amount" required><div className="input-prefix"><span>PKR</span><input required type="number" min="0.01" step="0.01" value={supplierAdjustmentValues.amount} onChange={(event) => setSupplierAdjustmentValues({ ...supplierAdjustmentValues, amount: event.target.value })} /></div></FormField>
             <FormField label="Reason" required><input required maxLength={160} value={supplierAdjustmentValues.reason} onChange={(event) => setSupplierAdjustmentValues({ ...supplierAdjustmentValues, reason: event.target.value })} /></FormField>
-            <FormField label="Owner PIN" required><input required type="password" inputMode="numeric" value={supplierAdjustmentValues.ownerPin} onChange={(event) => setSupplierAdjustmentValues({ ...supplierAdjustmentValues, ownerPin: event.target.value })} /></FormField>
             <div className="modal-actions"><button className="secondary-button" type="button" onClick={() => setSupplierAdjustmentOpen(false)}>Cancel</button><button className="primary-button" disabled={saving}>{saving ? "Posting…" : "Post adjustment"}</button></div>
           </form>
         </Modal>

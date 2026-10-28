@@ -23,8 +23,6 @@ export const channels = {
   listInvoices: "invoices:list",
   createInvoice: "invoices:create",
   printDocument: "documents:print",
-  pinStatus: "auth:pin-status",
-  setPin: "auth:set-pin",
   listSuppliers: "suppliers:list",
   getSupplier: "suppliers:get",
   createSupplier: "suppliers:create",

@@ -4,7 +4,6 @@ import { z } from "zod";
 import {
   createInvoiceSchema,
   returnDataSchema,
-  backupAuthorizationSchema,
   backupScheduleSchema,
   salesReturnSchema,
   purchaseReturnSchema,
@@ -42,7 +41,6 @@ import {
   fabricIdSchema,
   fabricInputSchema,
   openingStockSchema,
-  pinSetupSchema,
   stockAdjustmentSchema,
   supplierAdjustmentSchema,
   supplierIdSchema,
@@ -60,7 +58,6 @@ import {
 } from "../../shared/contracts";
 import { channels } from "../../shared/channels";
 import { FabricServiceError } from "../services/errors";
-import { OwnerAuthService } from "../services/owner-auth";
 import { InventoryService } from "../services/inventory";
 import { SupplierService } from "../services/suppliers";
 import { FabricService } from "../services/fabrics";
@@ -75,12 +72,6 @@ import { isTrustedSender } from "./security";
 
 function failure<T>(code: IpcErrorCode, message: string): IpcResult<T> {
   return { ok: false, error: { code, message } };
-}
-
-async function requireOwnerPin(ownerAuth: OwnerAuthService, ownerPin: string): Promise<void> {
-  if (!await ownerAuth.verifyPin(ownerPin)) {
-    throw new FabricServiceError("AUTHORIZATION", "The owner PIN is incorrect.");
-  }
 }
 
 function registerHandler<Input, Output, Service>(
@@ -122,7 +113,6 @@ export function registerIpcHandlers(
   fabrics: FabricService,
   inventory: InventoryService,
   suppliers: SupplierService,
-  ownerAuth: OwnerAuthService,
   customers: CustomerService,
   accounting: AccountingService,
   expenses: ExpenseService,
@@ -139,17 +129,11 @@ export function registerIpcHandlers(
   );
   registerHandler(
     channels.backupCreate, backups, developmentUrl, productionFileUrl,
-    backupAuthorizationSchema, async (service, input) => {
-      await requireOwnerPin(ownerAuth, input.ownerPin);
-      return service.createBackup();
-    },
+    z.undefined(), (service) => service.createBackup(),
   );
   registerHandler(
     channels.backupSetSchedule, backups, developmentUrl, productionFileUrl,
-    backupScheduleSchema, async (service, input) => {
-      await requireOwnerPin(ownerAuth, input.ownerPin);
-      return service.setSchedule(input.frequency);
-    },
+    backupScheduleSchema, (service, input) => service.setSchedule(input.frequency),
   );
   ipcMain.handle(channels.backupChooseDestination, async (event, rawInput): Promise<IpcResult<Awaited<ReturnType<BackupService["getSettings"]>>>> => {
     const frame = event.senderFrame;
@@ -157,9 +141,8 @@ export function registerIpcHandlers(
       return failure("VALIDATION", "Untrusted application frame.");
     }
     try {
-      const parsed = backupAuthorizationSchema.safeParse(rawInput);
+      const parsed = z.undefined().safeParse(rawInput);
       if (!parsed.success) return failure("VALIDATION", parsed.error.issues[0]?.message ?? "Invalid request.");
-      await requireOwnerPin(ownerAuth, parsed.data.ownerPin);
       const selected = await dialog.showOpenDialog({
         title: "Choose backup destination",
         properties: ["openDirectory", "createDirectory"],
@@ -180,9 +163,8 @@ export function registerIpcHandlers(
       return failure("VALIDATION", "Untrusted application frame.");
     }
     try {
-      const parsed = backupAuthorizationSchema.safeParse(rawInput);
+      const parsed = z.undefined().safeParse(rawInput);
       if (!parsed.success) return failure("VALIDATION", parsed.error.issues[0]?.message ?? "Invalid request.");
-      await requireOwnerPin(ownerAuth, parsed.data.ownerPin);
       const selected = await dialog.showOpenDialog({
         title: "Select a database backup to verify",
         properties: ["openFile"],
@@ -202,9 +184,8 @@ export function registerIpcHandlers(
       return failure("VALIDATION", "Untrusted application frame.");
     }
     try {
-      const parsed = backupAuthorizationSchema.safeParse(rawInput);
+      const parsed = z.undefined().safeParse(rawInput);
       if (!parsed.success) return failure("VALIDATION", parsed.error.issues[0]?.message ?? "Invalid request.");
-      await requireOwnerPin(ownerAuth, parsed.data.ownerPin);
       const selected = await dialog.showOpenDialog({
         title: "Select a database backup to restore",
         properties: ["openFile"],
@@ -240,52 +221,23 @@ export function registerIpcHandlers(
 
   registerHandler(
     channels.runAnalyticsReport, reports, developmentUrl, productionFileUrl,
-    analyticsReportSchema, async (service, input) => {
-      const { ownerPin, ...reportInput } = input;
-      if (!await ownerAuth.verifyPin(ownerPin)) {
-        throw new FabricServiceError("AUTHORIZATION", "The owner PIN is incorrect.");
-      }
-      return service.run(reportInput);
-    },
+    analyticsReportSchema, (service, input) => service.run(input),
   );
   registerHandler(
     channels.returnsData, returns, developmentUrl, productionFileUrl,
-    returnDataSchema, async (service, input) => {
-      if (!await ownerAuth.verifyPin(input.ownerPin)) {
-        throw new FabricServiceError("AUTHORIZATION", "The owner PIN is incorrect.");
-      }
-      return service.data();
-    },
+    returnDataSchema, (service) => service.data(),
   );
   registerHandler(
     channels.createSalesReturn, returns, developmentUrl, productionFileUrl,
-    salesReturnSchema, async (service, input) => {
-      const { ownerPin, ...returnInput } = input;
-      if (!await ownerAuth.verifyPin(ownerPin)) {
-        throw new FabricServiceError("AUTHORIZATION", "The owner PIN is incorrect.");
-      }
-      return service.createSales(returnInput, "Owner");
-    },
+    salesReturnSchema, (service, input) => service.createSales(input, "Staff"),
   );
   registerHandler(
     channels.createPurchaseReturn, returns, developmentUrl, productionFileUrl,
-    purchaseReturnSchema, async (service, input) => {
-      const { ownerPin, ...returnInput } = input;
-      if (!await ownerAuth.verifyPin(ownerPin)) {
-        throw new FabricServiceError("AUTHORIZATION", "The owner PIN is incorrect.");
-      }
-      return service.createPurchase(returnInput, "Owner");
-    },
+    purchaseReturnSchema, (service, input) => service.createPurchase(input, "Staff"),
   );
   registerHandler(
     channels.reverseReturn, returns, developmentUrl, productionFileUrl,
-    returnReversalSchema, async (service, input) => {
-      const { ownerPin, ...reversal } = input;
-      if (!await ownerAuth.verifyPin(ownerPin)) {
-        throw new FabricServiceError("AUTHORIZATION", "The owner PIN is incorrect.");
-      }
-      return service.reverse(reversal, "Owner");
-    },
+    returnReversalSchema, (service, input) => service.reverse(input, "Staff"),
   );
 
   ipcMain.handle(channels.printDocument, async (event, rawInput): Promise<IpcResult<{ printed: boolean }>> => {
@@ -350,13 +302,7 @@ export function registerIpcHandlers(
   registerHandler(
     channels.adjustStock, fabrics, developmentUrl, productionFileUrl,
     stockAdjustmentSchema,
-    async (service, input) => {
-      const { ownerPin, ...adjustment } = input;
-      if (!await ownerAuth.verifyPin(ownerPin)) {
-        throw new FabricServiceError("AUTHORIZATION", "The owner PIN is incorrect.");
-      }
-      return service.adjustStock(adjustment, "Owner");
-    },
+    (service, input) => service.adjustStock(input, "Staff"),
   );
   registerHandler(
     channels.inventoryReport, inventory, developmentUrl, productionFileUrl,
@@ -369,13 +315,9 @@ export function registerIpcHandlers(
   registerHandler(
     channels.inventoryOpening, inventory, developmentUrl, productionFileUrl,
     openingStockSchema,
-    async (service, input) => {
-      const { ownerPin, ...opening } = input;
-      if (!await ownerAuth.verifyPin(ownerPin)) {
-        throw new FabricServiceError("AUTHORIZATION", "The owner PIN is incorrect.");
-      }
-      service.openStock(opening, "Owner");
-      return fabrics.get(opening.fabricId).fabric;
+    (service, input) => {
+      service.openStock(input, "Staff");
+      return fabrics.get(input.fabricId).fabric;
     },
   );
   registerHandler(
@@ -387,14 +329,6 @@ export function registerIpcHandlers(
     createInvoiceSchema, (service, input) => service.createInvoice(input),
   );
   registerHandler(
-    channels.pinStatus, ownerAuth, developmentUrl, productionFileUrl,
-    z.undefined(), (service) => service.pinStatus(),
-  );
-  registerHandler(
-    channels.setPin, ownerAuth, developmentUrl, productionFileUrl,
-    pinSetupSchema, (service, input) => service.setPin(input.pin),
-  );
-  registerHandler(
     channels.listSuppliers, suppliers, developmentUrl, productionFileUrl,
     supplierListSchema, (service, input) => service.list(input),
   );
@@ -404,14 +338,7 @@ export function registerIpcHandlers(
   );
   registerHandler(
     channels.createSupplier, suppliers, developmentUrl, productionFileUrl,
-    supplierInputSchema,
-    async (service, input) => {
-      const { ownerPin, ...supplierInput } = input;
-      if (input.openingBalance > 0 && !await ownerAuth.verifyPin(ownerPin ?? "")) {
-        throw new FabricServiceError("AUTHORIZATION", "The owner PIN is incorrect.");
-      }
-      return service.create(supplierInput, input.openingBalance > 0 ? "Owner" : "System");
-    },
+    supplierInputSchema, (service, input) => service.create(input, "Staff"),
   );
   registerHandler(
     channels.updateSupplier, suppliers, developmentUrl, productionFileUrl,
@@ -427,24 +354,12 @@ export function registerIpcHandlers(
   );
   registerHandler(
     channels.reverseSupplierPayment, suppliers, developmentUrl, productionFileUrl,
-    supplierPaymentReversalSchema, async (service, input) => {
-      const { ownerPin, ...reversal } = input;
-      if (!await ownerAuth.verifyPin(ownerPin)) {
-        throw new FabricServiceError("AUTHORIZATION", "The owner PIN is incorrect.");
-      }
-      return service.reversePayment(reversal, "Owner");
-    },
+    supplierPaymentReversalSchema, (service, input) => service.reversePayment(input, "Staff"),
   );
   registerHandler(
     channels.adjustSupplier, suppliers, developmentUrl, productionFileUrl,
     supplierAdjustmentSchema,
-    async (service, input) => {
-      const { ownerPin, ...adjustment } = input;
-      if (!await ownerAuth.verifyPin(ownerPin)) {
-        throw new FabricServiceError("AUTHORIZATION", "The owner PIN is incorrect.");
-      }
-      return service.adjust(adjustment, "Owner");
-    },
+    (service, input) => service.adjust(input, "Staff"),
   );
   registerHandler(
     channels.supplierStatement, suppliers, developmentUrl, productionFileUrl,
@@ -464,14 +379,7 @@ export function registerIpcHandlers(
   );
   registerHandler(
     channels.createCustomer, customers, developmentUrl, productionFileUrl,
-    customerInputSchema,
-    async (service, input) => {
-      const { ownerPin, ...customerInput } = input;
-      if (input.openingBalance > 0 && !await ownerAuth.verifyPin(ownerPin ?? "")) {
-        throw new FabricServiceError("AUTHORIZATION", "The owner PIN is incorrect.");
-      }
-      return service.create(customerInput, input.openingBalance > 0 ? "Owner" : "System");
-    },
+    customerInputSchema, (service, input) => service.create(input, "Staff"),
   );
   registerHandler(
     channels.updateCustomer, customers, developmentUrl, productionFileUrl,
@@ -483,13 +391,7 @@ export function registerIpcHandlers(
   );
   registerHandler(
     channels.reverseCustomerReceipt, customers, developmentUrl, productionFileUrl,
-    customerReceiptReversalSchema, async (service, input) => {
-      const { ownerPin, ...reversal } = input;
-      if (!await ownerAuth.verifyPin(ownerPin)) {
-        throw new FabricServiceError("AUTHORIZATION", "The owner PIN is incorrect.");
-      }
-      return service.reverseReceipt(reversal, "Owner");
-    },
+    customerReceiptReversalSchema, (service, input) => service.reverseReceipt(input, "Staff"),
   );
   registerHandler(
     channels.customerPaymentAccounts, customers, developmentUrl, productionFileUrl,
@@ -517,13 +419,7 @@ export function registerIpcHandlers(
   );
   registerHandler(
     channels.accountingClosePeriod, accounting, developmentUrl, productionFileUrl,
-    accountingClosePeriodSchema, async (service, input) => {
-      const { ownerPin, id } = input;
-      if (!await ownerAuth.verifyPin(ownerPin)) {
-        throw new FabricServiceError("AUTHORIZATION", "The owner PIN is incorrect.");
-      }
-      return service.closePeriod(id);
-    },
+    accountingClosePeriodSchema, (service, input) => service.closePeriod(input.id),
   );
   registerHandler(
     channels.accountingTrialBalance, accounting, developmentUrl, productionFileUrl,
@@ -543,33 +439,15 @@ export function registerIpcHandlers(
   );
   registerHandler(
     channels.accountingPostEntry, accounting, developmentUrl, productionFileUrl,
-    accountingManualEntrySchema, async (service, input) => {
-      const { ownerPin, ...entry } = input;
-      if (!await ownerAuth.verifyPin(ownerPin)) {
-        throw new FabricServiceError("AUTHORIZATION", "The owner PIN is incorrect.");
-      }
-      return service.postEntry(entry);
-    },
+    accountingManualEntrySchema, (service, input) => service.postEntry(input),
   );
   registerHandler(
     channels.accountingOpeningBalances, accounting, developmentUrl, productionFileUrl,
-    accountingOpeningBalancesSchema, async (service, input) => {
-      const { ownerPin, ...openingBalances } = input;
-      if (!await ownerAuth.verifyPin(ownerPin)) {
-        throw new FabricServiceError("AUTHORIZATION", "The owner PIN is incorrect.");
-      }
-      return service.postOpeningBalances(openingBalances);
-    },
+    accountingOpeningBalancesSchema, (service, input) => service.postOpeningBalances(input),
   );
   registerHandler(
     channels.accountingReverseEntry, accounting, developmentUrl, productionFileUrl,
-    accountingEntryReversalSchema, async (service, input) => {
-      const { ownerPin, id, reason } = input;
-      if (!await ownerAuth.verifyPin(ownerPin)) {
-        throw new FabricServiceError("AUTHORIZATION", "The owner PIN is incorrect.");
-      }
-      return service.reverseEntry(id, reason);
-    },
+    accountingEntryReversalSchema, (service, input) => service.reverseEntry(input.id, input.reason),
   );
   registerHandler(
     channels.accountingReconcile, accounting, developmentUrl, productionFileUrl,

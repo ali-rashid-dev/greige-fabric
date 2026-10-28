@@ -75,7 +75,6 @@ export const stockAdjustmentSchema = z.object({
   quantityMeters: z.number().finite().positive().max(1_000_000)
     .refine((value) => hasPrecision(value, 1000), "Use up to 3 decimal places"),
   reason: z.string().trim().min(1, "A stock adjustment reason is required").max(160),
-  ownerPin: z.string().min(6).max(64),
 });
 
 export const openingStockSchema = z.object({
@@ -86,7 +85,6 @@ export const openingStockSchema = z.object({
     .refine((value) => hasPrecision(value, 100), "Use up to 2 decimal places"),
   reference: z.string().trim().min(1, "A reference is required").max(100),
   reason: z.string().trim().min(1, "A reason is required").max(160),
-  ownerPin: z.string().min(6).max(64),
 });
 
 export const createInvoiceSchema = z.object({
@@ -126,15 +124,12 @@ const returnItemFields = z.object({
   quantityMeters: z.number().finite().positive().max(1_000_000)
     .refine((value) => hasPrecision(value, 1000), "Use up to 3 decimal places"),
 });
-const returnOwnerPin = z.string().min(6).max(64).regex(/^\d+$/, "PIN must contain digits only");
-
 export const salesReturnSchema = z.object({
   invoiceId: z.string().uuid(),
   settlementType: z.enum(["refund", "customer_credit"]),
   paymentAccountCode: z.string().trim().min(1).max(40).optional(),
   reason: z.string().trim().min(1, "A return reason is required").max(240),
   items: z.array(returnItemFields.extend({ saleable: z.boolean() })).min(1).max(100),
-  ownerPin: returnOwnerPin,
 }).superRefine((input, context) => {
   if (new Set(input.items.map((item) => item.sourceItemId)).size !== input.items.length) {
     context.addIssue({ code: "custom", path: ["items"], message: "Each invoice line may appear only once per return." });
@@ -153,7 +148,6 @@ export const purchaseReturnSchema = z.object({
   paymentAccountCode: z.string().trim().min(1).max(40).optional(),
   reason: z.string().trim().min(1, "A return reason is required").max(240),
   items: z.array(returnItemFields).min(1).max(100),
-  ownerPin: returnOwnerPin,
 }).superRefine((input, context) => {
   if (new Set(input.items.map((item) => item.sourceItemId)).size !== input.items.length) {
     context.addIssue({ code: "custom", path: ["items"], message: "Each purchase line may appear only once per return." });
@@ -166,12 +160,9 @@ export const purchaseReturnSchema = z.object({
   }
 });
 
-export const returnDataSchema = z.object({ ownerPin: returnOwnerPin });
+export const returnDataSchema = z.undefined();
 
-export const backupAuthorizationSchema = z.object({
-  ownerPin: z.string().min(6).max(64).regex(/^\d+$/, "PIN must contain digits only"),
-});
-export const backupScheduleSchema = backupAuthorizationSchema.extend({
+export const backupScheduleSchema = z.object({
   frequency: z.enum(["disabled", "daily", "weekly"]),
 });
 
@@ -179,7 +170,6 @@ export const returnReversalSchema = z.object({
   returnId: z.string().uuid(),
   returnType: z.enum(["sales_return", "purchase_return"]),
   reason: z.string().trim().min(1, "A reversal reason is required").max(240),
-  ownerPin: returnOwnerPin,
 });
 
 export const printDocumentSchema = z.object({
@@ -197,7 +187,6 @@ export const analyticsReportSchema = z.object({
   page: z.number().int().min(1).default(1),
   pageSize: z.number().int().min(1).max(500).default(50),
   accountCode: z.string().trim().min(1).max(40).optional(),
-  ownerPin: z.string().min(6).max(64).regex(/^\d+$/, "PIN must contain digits only"),
 }).refine(({ from, to }) => from <= to, {
   path: ["to"],
   message: "End date must be on or after start date.",
@@ -218,15 +207,6 @@ export const supplierInputSchema = z.object({
   ...supplierFields,
   openingBalance: z.number().finite().nonnegative().max(1_000_000_000)
     .refine((value) => hasPrecision(value, 100), "Use up to 2 decimal places"),
-  ownerPin: z.string().optional(),
-}).superRefine(({ openingBalance, ownerPin }, context) => {
-  if (openingBalance > 0 && !/^\d{6,64}$/.test(ownerPin ?? "")) {
-    context.addIssue({
-      code: "custom",
-      path: ["ownerPin"],
-      message: "A valid owner PIN is required to record an opening payable balance.",
-    });
-  }
 });
 
 export const updateSupplierSchema = z.object({
@@ -294,7 +274,6 @@ export const supplierPaymentSchema = z.object({
 export const supplierPaymentReversalSchema = z.object({
   paymentId: z.string().uuid(),
   reason: z.string().trim().min(1, "A reversal reason is required").max(160),
-  ownerPin: returnOwnerPin,
 });
 
 export const supplierAdjustmentSchema = z.object({
@@ -303,7 +282,6 @@ export const supplierAdjustmentSchema = z.object({
   amount: z.number().finite().positive().max(1_000_000_000)
     .refine((value) => hasPrecision(value, 100), "Use up to 2 decimal places"),
   reason: z.string().trim().min(1, "An adjustment reason is required").max(160),
-  ownerPin: z.string().min(6).max(64),
 });
 
 export const supplierStatementSchema = z.object({
@@ -335,15 +313,6 @@ export const customerInputSchema = z.object({
   ...customerFields,
   openingBalance: z.number().finite().nonnegative().max(1_000_000_000)
     .refine((value) => hasPrecision(value, 100), "Use up to 2 decimal places"),
-  ownerPin: z.string().optional(),
-}).superRefine(({ openingBalance, ownerPin }, context) => {
-  if (openingBalance > 0 && !/^\d{6,64}$/.test(ownerPin ?? "")) {
-    context.addIssue({
-      code: "custom",
-      path: ["ownerPin"],
-      message: "A valid owner PIN is required to record an opening receivable.",
-    });
-  }
 });
 
 export const updateCustomerSchema = z.object({
@@ -373,7 +342,6 @@ export const customerReceiptSchema = z.object({
 export const customerReceiptReversalSchema = z.object({
   receiptId: z.string().uuid(),
   reason: z.string().trim().min(1, "A reversal reason is required").max(160),
-  ownerPin: returnOwnerPin,
 });
 
 export const customerStatementSchema = z.object({
@@ -448,7 +416,6 @@ export const accountingUpdateAccountSchema = z.object({
 
 export const accountingClosePeriodSchema = z.object({
   id: z.string().trim().min(1).max(80),
-  ownerPin: z.string().min(6).max(64).regex(/^\d+$/, "PIN must contain digits only"),
 });
 
 export const accountingTrialBalanceSchema = z.object({
@@ -475,11 +442,9 @@ export const accountingEntryIdSchema = z.object({
 export const accountingEntryReversalSchema = z.object({
   id: z.string().uuid(),
   reason: z.string().trim().min(1).max(160),
-  ownerPin: z.string().min(6).max(64).regex(/^\d+$/, "PIN must contain digits only"),
 });
 
 export const accountingManualEntrySchema = z.object({
-  ownerPin: z.string().min(6).max(64).regex(/^\d+$/, "PIN must contain digits only"),
   sourceId: accountingJournalFields.sourceId,
   reference: z.string().trim().min(1).max(120),
   date: accountingJournalFields.date,
@@ -487,7 +452,6 @@ export const accountingManualEntrySchema = z.object({
 }).superRefine(requireBalancedJournal);
 
 export const accountingOpeningBalancesSchema = z.object({
-  ownerPin: z.string().min(6).max(64).regex(/^\d+$/, "PIN must contain digits only"),
   sourceId: accountingJournalFields.sourceId,
   date: accountingJournalFields.date,
   lines: accountingJournalFields.lines,
@@ -609,18 +573,6 @@ export const partnerTransactionReversalSchema = z.object({
   reason: z.string().trim().min(1, "A reversal reason is required").max(240),
 });
 
-export const pinSchema = z.object({
-  pin: z.string().min(6, "PIN must be at least 6 characters").max(64)
-    .regex(/^\d+$/, "PIN must contain digits only"),
-});
-
-export const pinSetupSchema = pinSchema.extend({
-  confirmation: z.string(),
-}).refine(({ pin, confirmation }) => pin === confirmation, {
-  path: ["confirmation"],
-  message: "PIN confirmation does not match.",
-});
-
 export type FabricFiltersInput = z.input<typeof fabricFiltersSchema>;
 export type FabricInput = z.infer<typeof fabricInputSchema>;
 export type UpdateFabricInput = FabricInput & { id: string };
@@ -631,7 +583,7 @@ export type CreateInvoiceInput = z.infer<typeof createInvoiceSchema>;
 export type SalesReturnInput = z.infer<typeof salesReturnSchema>;
 export type PurchaseReturnInput = z.infer<typeof purchaseReturnSchema>;
 export type ReturnReversalInput = z.infer<typeof returnReversalSchema>;
-export type ReturnDataInput = z.infer<typeof returnDataSchema>;
+export type ReturnDataInput = undefined;
 export type PrintDocumentInput = z.infer<typeof printDocumentSchema>;
 export type AnalyticsReportInput = z.infer<typeof analyticsReportSchema>;
 export type SupplierInput = z.infer<typeof supplierInputSchema>;
@@ -684,11 +636,11 @@ export type IpcResult<T> =
 
 export interface IpcContract {
   "backup:settings": { input: undefined; output: BackupSettings };
-  "backup:create": { input: z.infer<typeof backupAuthorizationSchema>; output: { path: string; createdAt: string } };
-  "backup:choose-destination": { input: z.infer<typeof backupAuthorizationSchema>; output: BackupSettings };
+  "backup:create": { input: undefined; output: { path: string; createdAt: string } };
+  "backup:choose-destination": { input: undefined; output: BackupSettings };
   "backup:set-schedule": { input: BackupScheduleInput; output: BackupSettings };
-  "backup:verify": { input: z.infer<typeof backupAuthorizationSchema>; output: BackupVerification | null };
-  "backup:restore": { input: z.infer<typeof backupAuthorizationSchema>; output: { restarting: boolean } };
+  "backup:verify": { input: undefined; output: BackupVerification | null };
+  "backup:restore": { input: undefined; output: { restarting: boolean } };
   "reports:run": { input: AnalyticsReportInput; output: AnalyticsReport };
   "returns:data": { input: ReturnDataInput; output: ReturnData };
   "returns:sales": { input: SalesReturnInput; output: ReturnRecord };
@@ -714,8 +666,6 @@ export interface IpcContract {
   "customers:reverse-receipt": { input: CustomerReceiptReversalInput; output: CustomerDetails };
   "customers:payment-accounts": { input: undefined; output: PaymentAccount[] };
   "customers:statement": { input: CustomerStatementInput; output: CustomerStatement };
-  "auth:pin-status": { input: undefined; output: { configured: boolean } };
-  "auth:set-pin": { input: z.infer<typeof pinSetupSchema>; output: { configured: boolean } };
   "suppliers:list": { input: SupplierListInput; output: Supplier[] };
   "suppliers:get": { input: z.infer<typeof supplierIdSchema>; output: SupplierDetails };
   "suppliers:create": { input: SupplierInput; output: Supplier };
