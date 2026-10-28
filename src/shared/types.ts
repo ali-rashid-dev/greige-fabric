@@ -17,6 +17,13 @@ import type {
   ExpenseCategoryInput,
   ExpenseInput,
   ExpenseRangeInput,
+  PartnerAllocationPostInput,
+  PartnerInput,
+  PartnerListInput,
+  PartnerStatementInput,
+  PartnerTransactionInput,
+  PartnerTransactionHistoryInput,
+  PartnerTransactionReversalInput,
   ReturnDataInput,
   SalesReturnInput,
   PurchaseReturnInput,
@@ -291,6 +298,7 @@ export interface JournalLineInput {
   creditMinor?: number;
   supplierId?: string;
   customerId?: string;
+  partnerId?: string;
 }
 
 export interface JournalLine {
@@ -523,6 +531,160 @@ export interface CustomerDetails {
   statement: CustomerStatement | null;
 }
 
+export type PartnerType = "PARTNER" | "INVESTOR";
+export type InvestmentStructure = "EQUITY" | "LOAN";
+export type PartnerPaymentMethod = "CASH" | "BANK_TRANSFER" | "OTHER" | "JOURNAL";
+export type PartnerTransactionType =
+  | "CAPITAL_CONTRIBUTION"
+  | "LOAN_DISBURSEMENT"
+  | "LOAN_REPAYMENT"
+  | "PROFIT_ALLOCATION"
+  | "PROFIT_DISTRIBUTION"
+  | "PARTNER_WITHDRAWAL"
+  | "LOSS_ALLOCATION"
+  | "CAPITAL_SETTLEMENT";
+
+export interface BusinessPartner {
+  id: string;
+  code: string;
+  fullName: string;
+  partnerType: PartnerType;
+  investmentStructure: InvestmentStructure;
+  phone: string;
+  email: string;
+  address: string;
+  joiningDate: string;
+  ownershipBps: number;
+  profitSharingBps: number;
+  agreementStartDate: string;
+  agreementNotes: string;
+  active: boolean;
+  internalNotes: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface PartnerTransaction {
+  id: string;
+  partnerId: string;
+  partnerCode: string;
+  partnerName: string;
+  transactionType: PartnerTransactionType;
+  transactionDate: string;
+  amountMinor: number;
+  paymentMethod: PartnerPaymentMethod;
+  paymentAccountCode?: string;
+  paymentAccountName?: string;
+  reference: string;
+  description: string;
+  supportingNotes: string;
+  status: "POSTED" | "REVERSED";
+  journalTransactionId: string;
+  reversalOfTransactionId?: string;
+  reversalReason?: string;
+  createdAt: string;
+}
+
+export interface PartnerBalance {
+  partnerId: string;
+  code: string;
+  fullName: string;
+  partnerType: PartnerType;
+  investmentStructure: InvestmentStructure;
+  capitalBalanceMinor: number;
+  loanBalanceMinor: number;
+  distributableProfitMinor: number;
+}
+
+export interface PartnershipDashboard {
+  activePartners: number;
+  activeInvestors: number;
+  capitalContributedMinor: number;
+  outstandingPartnerLoansMinor: number;
+  profitAllocatedMinor: number;
+  profitDistributedMinor: number;
+  partnerWithdrawalsMinor: number;
+  partnerCapitalBalancesMinor: number;
+  from: string;
+  to: string;
+  recentTransactions: PartnerTransaction[];
+  contributionTrends: Array<{ month: string; amountMinor: number }>;
+  profitSummary: Array<{ partnerName: string; allocatedMinor: number; distributedMinor: number }>;
+  balances: PartnerBalance[];
+}
+
+export interface PartnerListResult {
+  partners: BusinessPartner[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
+export interface PartnerDetails {
+  partner: BusinessPartner;
+  transactions: PartnerTransaction[];
+  balance: PartnerBalance;
+}
+
+export interface PartnerTransactionHistoryResult {
+  transactions: PartnerTransaction[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
+export interface PartnerAllocationLine {
+  partnerId: string;
+  partnerCode: string;
+  partnerName: string;
+  sharingBps: number;
+  amountMinor: number;
+}
+
+export interface PartnerAllocationPreview {
+  periodId: string;
+  periodName: string;
+  startsOn: string;
+  endsOn: string;
+  status: "open" | "closed";
+  finalizedNetProfitMinor: number | null;
+  totalSharingBps: number;
+  isEligibleToPost: boolean;
+  reason?: string;
+  allocations: PartnerAllocationLine[];
+}
+
+export interface PartnerStatementLine {
+  transaction: PartnerTransaction;
+  accountCode: string;
+  debitMinor: number;
+  creditMinor: number;
+  balanceMinor: number;
+}
+
+export interface PartnerStatement {
+  partnerId: string;
+  from: string;
+  to: string;
+  openingCapitalMinor: number;
+  closingCapitalMinor: number;
+  openingLoanMinor: number;
+  closingLoanMinor: number;
+  openingDistributableProfitMinor: number;
+  closingDistributableProfitMinor: number;
+  lines: PartnerStatementLine[];
+  totals: {
+    contributionsMinor: number;
+    loanDisbursementsMinor: number;
+    loanRepaymentsMinor: number;
+    profitAllocatedMinor: number;
+    lossAllocatedMinor: number;
+    profitDistributedMinor: number;
+    withdrawalsMinor: number;
+    settlementsMinor: number;
+  };
+}
+
 export interface DesktopApi {
   backups: {
     settings(): Promise<IpcResult<BackupSettings>>;
@@ -611,6 +773,20 @@ export interface DesktopApi {
     record(input: ExpenseInput): Promise<IpcResult<Expense>>;
     list(input: ExpenseRangeInput): Promise<IpcResult<Expense[]>>;
     report(input: ExpenseRangeInput): Promise<IpcResult<ExpenseReport>>;
+  };
+  partners: {
+    dashboard(input: ExpenseRangeInput): Promise<IpcResult<PartnershipDashboard>>;
+    list(input: PartnerListInput): Promise<IpcResult<PartnerListResult>>;
+    get(input: { id: string }): Promise<IpcResult<PartnerDetails>>;
+    save(input: PartnerInput): Promise<IpcResult<BusinessPartner>>;
+    setActive(input: { id: string; active: boolean }): Promise<IpcResult<BusinessPartner>>;
+    paymentAccounts(): Promise<IpcResult<PaymentAccount[]>>;
+    postTransaction(input: PartnerTransactionInput): Promise<IpcResult<PartnerTransaction>>;
+    transactions(input: PartnerTransactionHistoryInput): Promise<IpcResult<PartnerTransactionHistoryResult>>;
+    allocationPreview(input: { periodId: string }): Promise<IpcResult<PartnerAllocationPreview>>;
+    postAllocation(input: PartnerAllocationPostInput): Promise<IpcResult<PartnerTransaction[]>>;
+    statement(input: PartnerStatementInput): Promise<IpcResult<PartnerStatement>>;
+    reverse(input: PartnerTransactionReversalInput): Promise<IpcResult<PartnerTransaction>>;
   };
 }
 

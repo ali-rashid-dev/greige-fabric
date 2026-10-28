@@ -51,6 +51,27 @@ rounding in integer arithmetic. Payments are posted to the selected Cash or Bank
 Supplier statements show opening and closing balances for a date range, and the
 supplier subledger can be reconciled to the Accounts Payable control account.
 
+## Partnership & Investors
+
+The Partnership & Investors workspace manages partner and investor profiles,
+effective-dated ownership/profit-sharing terms, capital contributions, partner
+loans, repayments, withdrawals, profit distributions, reversals, and printable
+or CSV-exportable statements. Contributions, loan balances, partner capital,
+and distributable profits use separate ledger accounts and partner subledger
+references; withdrawals are drawings, not business expenses. Posted records
+cannot be edited or deleted, and each financial transaction is linked to its
+balanced journal entry.
+
+Profit and loss allocations are previewed from the accounting engine's finalized
+ledger income and expenses, and can be posted only after the selected accounting
+period is closed. Applicable sharing terms must total exactly 100%; the preview
+uses the terms effective at the end of that period. Changing current agreement
+terms does not recalculate old allocations. Profit allocations transfer value
+from the partner allocation equity account to profit distributions payable;
+losses reduce partner capital under the same effective sharing terms. The module
+uses validated, operation-specific Electron IPC calls and does not add a login
+or require an owner PIN.
+
 Sales invoices are recorded against Accounts Receivable; sales revenue and cost
 of goods sold are also posted to the ledger. Tax rules, receipt printing,
 customer records, and customer payment collection are not yet included.
@@ -139,9 +160,9 @@ installer and printer on Windows.
 
 ## Project structure
 
-- `src/app/`: catalog, inventory, supplier, and invoice-history screens.
+- `src/app/`: catalog, inventory, supplier, partnership, and invoice-history screens.
 - `src/shared/`: Zod request schemas, IPC channels, and public types.
-- `src/main/`: Electron lifecycle, SQLite setup, inventory/fabric/supplier
+- `src/main/`: Electron lifecycle, SQLite setup, inventory/fabric/supplier/partner
   services, local authorization, accounting, and validated IPC handlers.
 - `database/migrations/`: versioned SQL schema.
 - `tests/`: catalog, inventory, accounting, supplier reconciliation, and

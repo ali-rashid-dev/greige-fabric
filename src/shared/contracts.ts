@@ -28,6 +28,14 @@ import type {
   ReturnRecord,
   BackupSettings,
   BackupVerification,
+  PartnerAllocationPreview,
+  PartnerListResult,
+  PartnerStatement,
+  PartnerTransaction,
+  BusinessPartner,
+  PartnerDetails,
+  PartnershipDashboard,
+  PartnerTransactionHistoryResult,
 } from "./types";
 
 function hasPrecision(value: number, scale: number): boolean {
@@ -507,6 +515,100 @@ export const expenseRangeSchema = z.object({
   message: "End date must be on or after start date.",
 });
 
+export const partnerInputSchema = z.object({
+  id: z.string().uuid().optional(),
+  code: z.string().trim().min(2, "Partner code is required").max(40)
+    .transform((value) => value.toUpperCase()),
+  fullName: z.string().trim().min(1, "Full name is required").max(160),
+  partnerType: z.enum(["PARTNER", "INVESTOR"]),
+  investmentStructure: z.enum(["EQUITY", "LOAN"]),
+  phone: z.string().trim().max(40).default(""),
+  email: z.string().trim().max(160).refine((value) => value === "" || z.email().safeParse(value).success, "Enter a valid email address").default(""),
+  address: z.string().trim().max(500).default(""),
+  joiningDate: z.string().date(),
+  ownershipBps: z.number().int().min(0).max(10000),
+  profitSharingBps: z.number().int().min(0).max(10000),
+  agreementStartDate: z.string().date(),
+  agreementNotes: z.string().trim().max(2000).default(""),
+  active: z.boolean().default(true),
+  internalNotes: z.string().trim().max(4000).default(""),
+}).superRefine(({ joiningDate, agreementStartDate }, context) => {
+  if (agreementStartDate < joiningDate) {
+    context.addIssue({
+      code: "custom",
+      path: ["agreementStartDate"],
+      message: "Agreement terms cannot start before the partner's joining date.",
+    });
+  }
+});
+
+export const partnerListSchema = z.object({
+  query: z.string().trim().max(200).default(""),
+  status: z.enum(["all", "active", "inactive"]).default("active"),
+  partnerType: z.enum(["all", "PARTNER", "INVESTOR"]).default("all"),
+  sortBy: z.enum(["name", "code", "joiningDate"]).default("name"),
+  sortDirection: z.enum(["asc", "desc"]).default("asc"),
+  page: z.number().int().min(1).default(1),
+  pageSize: z.number().int().min(1).max(100).default(25),
+});
+
+export const partnerIdSchema = z.object({ id: z.string().uuid() });
+
+export const partnerTransactionInputSchema = z.object({
+  submissionId: z.string().uuid(),
+  partnerId: z.string().uuid(),
+  transactionType: z.enum([
+    "CAPITAL_CONTRIBUTION",
+    "LOAN_DISBURSEMENT",
+    "LOAN_REPAYMENT",
+    "PROFIT_DISTRIBUTION",
+    "PARTNER_WITHDRAWAL",
+    "CAPITAL_SETTLEMENT",
+  ]),
+  transactionDate: z.string().date(),
+  amount: z.number().finite().positive().max(1_000_000_000)
+    .refine((value) => hasPrecision(value, 100), "Use up to 2 decimal places"),
+  paymentMethod: z.enum(["CASH", "BANK_TRANSFER", "OTHER"]),
+  paymentAccountCode: z.string().trim().min(1).max(40),
+  reference: z.string().trim().max(120).default(""),
+  description: z.string().trim().min(1, "Enter a transaction description").max(240),
+  supportingNotes: z.string().trim().max(2000).default(""),
+});
+
+export const partnerTransactionHistorySchema = z.object({
+  from: z.string().date(),
+  to: z.string().date(),
+  page: z.number().int().min(1).default(1),
+  pageSize: z.number().int().min(1).max(100).default(25),
+}).refine(({ from, to }) => from <= to, {
+  path: ["to"],
+  message: "End date must be on or after start date.",
+});
+
+export const partnerAllocationPreviewSchema = z.object({
+  periodId: z.string().trim().min(1).max(80),
+});
+
+export const partnerAllocationPostSchema = partnerAllocationPreviewSchema.extend({
+  allocationDate: z.string().date(),
+  confirmed: z.literal(true),
+});
+
+export const partnerStatementSchema = z.object({
+  partnerId: z.string().uuid(),
+  from: z.string().date(),
+  to: z.string().date(),
+}).refine(({ from, to }) => from <= to, {
+  path: ["to"],
+  message: "End date must be on or after start date.",
+});
+
+export const partnerTransactionReversalSchema = z.object({
+  id: z.string().uuid(),
+  date: z.string().date(),
+  reason: z.string().trim().min(1, "A reversal reason is required").max(240),
+});
+
 export const pinSchema = z.object({
   pin: z.string().min(6, "PIN must be at least 6 characters").max(64)
     .regex(/^\d+$/, "PIN must contain digits only"),
@@ -558,6 +660,14 @@ export type AccountingEntryReversalInput = z.infer<typeof accountingEntryReversa
 export type ExpenseInput = z.infer<typeof expenseInputSchema>;
 export type ExpenseCategoryInput = z.infer<typeof expenseCategoryInputSchema>;
 export type ExpenseRangeInput = z.infer<typeof expenseRangeSchema>;
+export type PartnerInput = z.infer<typeof partnerInputSchema>;
+export type PartnerListInput = z.input<typeof partnerListSchema>;
+export type PartnerTransactionInput = z.infer<typeof partnerTransactionInputSchema>;
+export type PartnerTransactionHistoryInput = z.input<typeof partnerTransactionHistorySchema>;
+export type PartnerAllocationPreviewInput = z.infer<typeof partnerAllocationPreviewSchema>;
+export type PartnerAllocationPostInput = z.infer<typeof partnerAllocationPostSchema>;
+export type PartnerStatementInput = z.infer<typeof partnerStatementSchema>;
+export type PartnerTransactionReversalInput = z.infer<typeof partnerTransactionReversalSchema>;
 export type BackupScheduleInput = z.infer<typeof backupScheduleSchema>;
 
 export type IpcErrorCode =
@@ -634,4 +744,16 @@ export interface IpcContract {
   "expenses:record": { input: ExpenseInput; output: Expense };
   "expenses:list": { input: ExpenseRangeInput; output: Expense[] };
   "expenses:report": { input: ExpenseRangeInput; output: ExpenseReport };
+  "partners:dashboard": { input: ExpenseRangeInput; output: PartnershipDashboard };
+  "partners:list": { input: PartnerListInput; output: PartnerListResult };
+  "partners:get": { input: z.infer<typeof partnerIdSchema>; output: PartnerDetails };
+  "partners:save": { input: PartnerInput; output: BusinessPartner };
+  "partners:set-active": { input: z.infer<typeof partnerIdSchema> & { active: boolean }; output: BusinessPartner };
+  "partners:payment-accounts": { input: undefined; output: PaymentAccount[] };
+  "partners:post-transaction": { input: PartnerTransactionInput; output: PartnerTransaction };
+  "partners:transactions": { input: PartnerTransactionHistoryInput; output: PartnerTransactionHistoryResult };
+  "partners:allocation-preview": { input: PartnerAllocationPreviewInput; output: PartnerAllocationPreview };
+  "partners:post-allocation": { input: PartnerAllocationPostInput; output: PartnerTransaction[] };
+  "partners:statement": { input: PartnerStatementInput; output: PartnerStatement };
+  "partners:reverse": { input: PartnerTransactionReversalInput; output: PartnerTransaction };
 }

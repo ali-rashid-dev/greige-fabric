@@ -22,6 +22,15 @@ import {
   expenseCategoryInputSchema,
   expenseInputSchema,
   expenseRangeSchema,
+  partnerAllocationPostSchema,
+  partnerAllocationPreviewSchema,
+  partnerIdSchema,
+  partnerInputSchema,
+  partnerListSchema,
+  partnerStatementSchema,
+  partnerTransactionInputSchema,
+  partnerTransactionHistorySchema,
+  partnerTransactionReversalSchema,
   analyticsReportSchema,
   printDocumentSchema,
   customerInputSchema,
@@ -58,6 +67,7 @@ import { FabricService } from "../services/fabrics";
 import { CustomerService } from "../services/customers";
 import { AccountingService } from "../services/accounting";
 import { ExpenseService } from "../services/expenses";
+import { PartnerService } from "../services/partners";
 import { ReportsService } from "../services/reports";
 import { ReturnsService } from "../services/returns";
 import { BackupService } from "../services/backups";
@@ -116,6 +126,7 @@ export function registerIpcHandlers(
   customers: CustomerService,
   accounting: AccountingService,
   expenses: ExpenseService,
+  partners: PartnerService,
   reports: ReportsService,
   returns: ReturnsService,
   backups: BackupService,
@@ -583,5 +594,54 @@ export function registerIpcHandlers(
   registerHandler(
     channels.expenseReport, expenses, developmentUrl, productionFileUrl,
     expenseRangeSchema, (service, input) => service.report(input),
+  );
+  registerHandler(
+    channels.partnerDashboard, partners, developmentUrl, productionFileUrl,
+    expenseRangeSchema, (service, input) => service.dashboard(input),
+  );
+  registerHandler(
+    channels.partnerList, partners, developmentUrl, productionFileUrl,
+    partnerListSchema, (service, input) => service.list(input),
+  );
+  registerHandler(
+    channels.partnerGet, partners, developmentUrl, productionFileUrl,
+    partnerIdSchema, (service, input) => service.get(input.id),
+  );
+  registerHandler(
+    channels.partnerSave, partners, developmentUrl, productionFileUrl,
+    partnerInputSchema, (service, input) => service.save(input),
+  );
+  registerHandler(
+    channels.partnerSetActive, partners, developmentUrl, productionFileUrl,
+    partnerIdSchema.extend({ active: z.boolean() }),
+    (service, input) => service.setActive(input.id, input.active),
+  );
+  registerHandler(
+    channels.partnerPaymentAccounts, partners, developmentUrl, productionFileUrl,
+    z.undefined(), (service) => service.paymentAccounts(),
+  );
+  registerHandler(
+    channels.partnerPostTransaction, partners, developmentUrl, productionFileUrl,
+    partnerTransactionInputSchema, (service, input) => service.postTransaction(input),
+  );
+  registerHandler(
+    channels.partnerTransactions, partners, developmentUrl, productionFileUrl,
+    partnerTransactionHistorySchema, (service, input) => service.transactions(input),
+  );
+  registerHandler(
+    channels.partnerAllocationPreview, partners, developmentUrl, productionFileUrl,
+    partnerAllocationPreviewSchema, (service, input) => service.allocationPreview(input.periodId),
+  );
+  registerHandler(
+    channels.partnerPostAllocation, partners, developmentUrl, productionFileUrl,
+    partnerAllocationPostSchema, (service, input) => service.postAllocation(input),
+  );
+  registerHandler(
+    channels.partnerStatement, partners, developmentUrl, productionFileUrl,
+    partnerStatementSchema, (service, input) => service.statement(input),
+  );
+  registerHandler(
+    channels.partnerReverse, partners, developmentUrl, productionFileUrl,
+    partnerTransactionReversalSchema, (service, input) => service.reverse(input),
   );
 }

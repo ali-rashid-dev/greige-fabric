@@ -3056,3 +3056,369 @@ td {
     white-space: nowrap;
   }
 }
+
+.partnership-page {
+  display: grid;
+  gap: 16px;
+}
+
+.partnership-page .expense-tabs {
+  display: flex;
+  gap: 3px;
+  padding: 5px;
+}
+
+.partnership-page .expense-tabs button {
+  min-height: 34px;
+  padding: 0 12px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: #748078;
+  font-size: 10px;
+  font-weight: 550;
+  white-space: nowrap;
+}
+
+.partnership-page .expense-tabs button.active-tab {
+  border-color: #dce8dd;
+  background: var(--green-light);
+  color: var(--green-dark);
+}
+
+.partnership-summary {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.partnership-summary .summary-card {
+  min-width: 0;
+}
+
+.partnership-summary .summary-card > div {
+  min-width: 0;
+}
+
+.partnership-summary .summary-card strong {
+  overflow-wrap: anywhere;
+  font-size: 13px;
+}
+
+.partnership-summary .summary-card small {
+  display: block;
+  margin-top: 4px;
+  color: #9aa39c;
+  font-size: 8px;
+}
+
+.partnership-columns {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 16px;
+}
+
+.partnership-bars {
+  display: grid;
+  gap: 12px;
+  padding: 17px;
+}
+
+.partnership-bars > div {
+  display: grid;
+  grid-template-columns: 58px minmax(50px, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  color: #77837a;
+  font-size: 9px;
+}
+
+.partnership-bars strong {
+  color: #536459;
+  font-size: 9px;
+}
+
+.partnership-bar-track {
+  height: 8px;
+  overflow: hidden;
+  border-radius: 6px;
+  background: #eff3ef;
+}
+
+.partnership-bar-track i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--green);
+}
+
+.partner-profile-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0 18px;
+  padding: 6px 17px 17px;
+}
+
+.partner-profile-grid p {
+  display: grid;
+  gap: 6px;
+  margin: 10px 0;
+}
+
+.partner-profile-grid p > span {
+  color: #98a199;
+  font-size: 8px;
+}
+
+.partner-profile-grid p > strong {
+  color: #4a584e;
+  font-size: 10px;
+  font-weight: 550;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.partner-profile-grid .profile-notes {
+  grid-column: span 2;
+}
+
+.partner-list-toolbar {
+  flex-wrap: wrap;
+}
+
+.partner-list-toolbar .search-field {
+  flex: 1 1 280px;
+}
+
+.partner-pagination {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 15px;
+  border-top: 1px solid #edf0ec;
+  color: #88938a;
+  font-size: 9px;
+}
+
+.partner-pagination > span {
+  margin-right: auto;
+}
+
+.partner-status {
+  display: inline-flex;
+  align-items: center;
+  min-height: 19px;
+  padding: 0 7px;
+  border-radius: 12px;
+  background: #f2f3f1;
+  color: #7e8780;
+  font-size: 8px;
+  font-weight: 650;
+}
+
+.partner-status.active {
+  background: #edf4ee;
+  color: #53745d;
+}
+
+.partner-form-panel .fabric-form {
+  padding: 18px;
+}
+
+.partner-checkbox {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: #647168;
+  font-size: 10px;
+}
+
+.partner-checkbox input {
+  accent-color: var(--green);
+}
+
+.partner-transaction-form {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  align-items: end;
+}
+
+.partner-transaction-form > label,
+.partner-allocation-controls label,
+.partner-statement-controls label,
+.panel-toolbar > label {
+  display: grid;
+  gap: 6px;
+  color: #78847b;
+  font-size: 9px;
+  font-weight: 600;
+}
+
+.partner-transaction-form input,
+.partner-transaction-form select,
+.partner-allocation-controls input,
+.partner-allocation-controls select,
+.partner-statement-controls input,
+.partner-statement-controls select,
+.panel-toolbar > label input {
+  width: 100%;
+  height: 35px;
+  padding: 0 9px;
+  border: 1px solid #e4e9e4;
+  border-radius: 5px;
+  background: white;
+  font-size: 10px;
+}
+
+.partner-transaction-form .partner-transaction-notes,
+.partner-transaction-form .form-footnote {
+  grid-column: 1 / -1;
+}
+
+.partner-transaction-form > .primary-button {
+  justify-self: start;
+}
+
+.partner-allocation-controls,
+.partner-statement-controls {
+  display: flex;
+  align-items: end;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 16px;
+}
+
+.partner-allocation-controls label {
+  min-width: 190px;
+}
+
+.partner-statement-controls label {
+  min-width: 145px;
+}
+
+.partnership-allocation-summary {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin: 12px 16px;
+}
+
+.partnership-statement-summary {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin: 16px 0;
+}
+
+.partner-statement-heading {
+  display: grid;
+  gap: 5px;
+  padding: 10px 0 14px;
+  color: #5e6a61;
+}
+
+.partner-statement-heading strong {
+  color: #334138;
+  font-size: 12px;
+}
+
+.partner-statement-heading h2 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.partner-statement-heading span {
+  color: #879188;
+  font-size: 9px;
+}
+
+.partner-statement-totals {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 9px;
+  padding: 14px 0;
+}
+
+.partner-statement-totals span {
+  display: grid;
+  gap: 5px;
+  color: #8b958d;
+  font-size: 8px;
+}
+
+.partner-statement-totals strong {
+  color: #4c5c51;
+  font-size: 10px;
+}
+
+@media (max-width: 1020px) {
+  .partnership-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .partner-profile-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 720px) {
+  .partnership-columns {
+    grid-template-columns: 1fr;
+  }
+
+  .partner-profile-grid,
+  .partnership-statement-summary,
+  .partnership-allocation-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .partner-profile-grid .profile-notes {
+    grid-column: 1 / -1;
+  }
+
+  .partner-transaction-form {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .partner-transaction-form .partner-transaction-notes,
+  .partner-transaction-form .form-footnote {
+    grid-column: auto;
+  }
+
+  .partner-allocation-controls,
+  .partner-statement-controls {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .partner-statement-totals {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media print {
+  body:has(.partner-statement-heading) {
+    background: white;
+  }
+
+  body:has(.partner-statement-heading) .sidebar,
+  body:has(.partner-statement-heading) .main-content > .topbar,
+  body:has(.partner-statement-heading) .partnership-page > :not(.statement-printable),
+  body:has(.partner-statement-heading) .statement-printable > .panel-heading,
+  body:has(.partner-statement-heading) .no-print {
+    display: none !important;
+  }
+
+  body:has(.partner-statement-heading) .app-shell,
+  body:has(.partner-statement-heading) .main-content,
+  body:has(.partner-statement-heading) .content-scroll {
+    display: block;
+    width: 100%;
+    min-height: auto;
+    padding: 0;
+    border: 0;
+    background: white;
+  }
+
+  body:has(.partner-statement-heading) .partner-statement-heading,
+  body:has(.partner-statement-heading) .partnership-statement-summary,
+  body:has(.partner-statement-heading) .partner-statement-totals,
+  body:has(.partner-statement-heading) .statement-printable table {
+    color: #111;
+    break-inside: avoid;
+  }
+}

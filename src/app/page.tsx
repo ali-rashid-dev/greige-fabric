@@ -11,6 +11,7 @@ import ExpensesManagement from "./expenses-management";
 import ReportsManagement from "./reports-management";
 import ReturnsManagement from "./returns-management";
 import BackupManagement from "./backup-management";
+import PartnershipManagement from "./partnership-management";
 import type {
   Fabric,
   FabricDetails,
@@ -30,7 +31,7 @@ import type {
   SupplierStatement,
 } from "@/shared/types";
 
-type Section = "pos" | "fabrics" | "stock" | "suppliers" | "customers" | "invoices" | "expenses" | "reports" | "returns" | "backups";
+type Section = "pos" | "fabrics" | "stock" | "suppliers" | "customers" | "invoices" | "expenses" | "reports" | "returns" | "backups" | "partners";
 type StatusFilter = "active" | "all" | "inactive" | "low-stock";
 type InventoryView = "overview" | "movements" | "low-stock" | "valuation";
 type CustomerTab = "overview" | "sales" | "payments" | "ledger";
@@ -915,6 +916,8 @@ export default function Home() {
         ? "Suppliers"
         : section === "customers"
           ? customerDetails?.customer.name ?? "Customers"
+          : section === "partners"
+            ? "Partnership & Investors"
           : section === "expenses"
             ? "Expenses & cashbook"
             : section === "reports"
@@ -957,6 +960,9 @@ export default function Home() {
           </button>
           <button className={section === "expenses" ? "nav-item active" : "nav-item"} onClick={() => setSection("expenses")}>
             <span className="nav-icon">₨</span> Expenses & cashbook
+          </button>
+          <button className={section === "partners" ? "nav-item active" : "nav-item"} onClick={() => setSection("partners")}>
+            <span className="nav-icon">♧</span> Partnership & Investors
           </button>
           <button className={section === "reports" ? "nav-item active" : "nav-item"} onClick={() => setSection("reports")}>
             <span className="nav-icon">▤</span> Reports & analytics
@@ -1024,6 +1030,7 @@ export default function Home() {
 
           {section === "pos" && <SalesPos customers={customers} onPosted={handleSalePosted} />}
           {section === "expenses" && <ExpensesManagement />}
+          {section === "partners" && <PartnershipManagement />}
           {section === "reports" && <ReportsManagement />}
           {section === "returns" && <ReturnsManagement />}
           {section === "backups" && <BackupManagement />}

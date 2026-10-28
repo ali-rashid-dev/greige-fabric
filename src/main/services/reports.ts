@@ -29,6 +29,60 @@ function reconciliation(
   };
 }
 
+function accountPeriodBalance(
+  database: Database.Database,
+  accountType: string,
+  from: string,
+  to: string,
+  excludeCode?: string,
+  onlyCode?: string,
+): number {
+  const row = database.prepare(`
+    SELECT COALESCE(SUM(
+      CASE WHEN a.normal_balance = 'credit' THEN p.credit_minor - p.debit_minor
+           ELSE p.debit_minor - p.credit_minor END
+    ), 0) AS balance_minor
+    FROM ledger_postings p
+    JOIN ledger_transactions t ON t.id = p.transaction_id
+    JOIN ledger_accounts a ON a.code = p.account_code
+    WHERE a.account_type = ? AND (? IS NULL OR a.code != ?)
+      AND (? IS NULL OR a.code = ?)
+      AND substr(t.created_at, 1, 10) >= ? AND substr(t.created_at, 1, 10) <= ?
+  `).get(
+    accountType, excludeCode ?? null, excludeCode ?? null,
+    onlyCode ?? null, onlyCode ?? null, from, to,
+  ) as { balance_minor: number };
+  if (!Number.isSafeInteger(row.balance_minor)) {
+    throw new FabricServiceError("VALIDATION", "The profit and loss total exceeds supported accounting precision.");
+  }
+  return row.balance_minor;
+}
+
+export function finalizedProfitForPeriod(
+  database: Database.Database,
+  from: string,
+  to: string,
+): {
+  revenueMinor: number;
+  costOfGoodsSoldMinor: number;
+  operatingExpensesMinor: number;
+  netProfitMinor: number;
+} {
+  const revenueMinor = accountPeriodBalance(database, "income", from, to);
+  const costOfGoodsSoldMinor = accountPeriodBalance(database, "expense", from, to, undefined, "5000");
+  const operatingExpensesMinor = accountPeriodBalance(database, "expense", from, to, "5000");
+  const netProfitMinor = revenueMinor - costOfGoodsSoldMinor - operatingExpensesMinor;
+  if (!Number.isSafeInteger(netProfitMinor)) {
+    throw new FabricServiceError("VALIDATION", "The finalized net profit exceeds supported accounting precision.");
+  }
+  return {
+    revenueMinor,
+    costOfGoodsSoldMinor,
+    operatingExpensesMinor,
+    netProfitMinor,
+  };
+}
+
 export class ReportsService {
   constructor(private readonly database: Database.Database) {}
 
@@ -211,11 +265,9 @@ export class ReportsService {
   }
 
   private profitReport(from: string, to: string, grossOnly: boolean): QueryReport {
-    const revenueMinor = this.accountPeriodBalance("income", from, to);
-    const costOfGoodsSoldMinor = this.accountPeriodBalance("expense", from, to, undefined, "5000");
-    const operatingExpensesMinor = this.accountPeriodBalance("expense", from, to, "5000");
+    const profit = finalizedProfitForPeriod(this.database, from, to);
+    const { revenueMinor, costOfGoodsSoldMinor, operatingExpensesMinor, netProfitMinor } = profit;
     const grossProfitMinor = revenueMinor - costOfGoodsSoldMinor;
-    const netProfitMinor = grossProfitMinor - operatingExpensesMinor;
     const rows = grossOnly
       ? [
         { item: "Net sales revenue", amount_minor: revenueMinor },
@@ -237,31 +289,6 @@ export class ReportsService {
       rows,
       totals: { revenueMinor, costOfGoodsSoldMinor, grossProfitMinor, operatingExpensesMinor, netProfitMinor },
     };
-  }
-
-  private accountPeriodBalance(
-    accountType: string,
-    from: string,
-    to: string,
-    excludeCode?: string,
-    onlyCode?: string,
-  ): number {
-    const row = this.database.prepare(`
-      SELECT COALESCE(SUM(
-        CASE WHEN a.normal_balance = 'credit' THEN p.credit_minor - p.debit_minor
-             ELSE p.debit_minor - p.credit_minor END
-      ), 0) AS balance_minor
-      FROM ledger_postings p
-      JOIN ledger_transactions t ON t.id = p.transaction_id
-      JOIN ledger_accounts a ON a.code = p.account_code
-      WHERE a.account_type = ? AND (? IS NULL OR a.code != ?)
-        AND (? IS NULL OR a.code = ?)
-        AND substr(t.created_at, 1, 10) >= ? AND substr(t.created_at, 1, 10) <= ?
-    `).get(
-      accountType, excludeCode ?? null, excludeCode ?? null,
-      onlyCode ?? null, onlyCode ?? null, from, to,
-    ) as { balance_minor: number };
-    return row.balance_minor;
   }
 
   private customerBalances(asOf: string): QueryReport {

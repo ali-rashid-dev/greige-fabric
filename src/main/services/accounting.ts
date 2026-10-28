@@ -169,8 +169,8 @@ export function postJournal(
   const transaction = database.transaction(() => {
     const periodId = requireOpenPeriod(database, parsedDate);
     for (const line of effectiveLines) {
-      if (line.customerId && line.supplierId) {
-        throw new FabricServiceError("VALIDATION", "A journal line cannot reference both a customer and supplier.");
+      if ([line.customerId, line.supplierId, line.partnerId].filter(Boolean).length > 1) {
+        throw new FabricServiceError("VALIDATION", "A journal line cannot reference more than one subledger party.");
       }
       const account = database.prepare(
         "SELECT code FROM ledger_accounts WHERE code = ?",
@@ -181,6 +181,15 @@ export function postJournal(
       }
       if (line.supplierId && line.accountCode !== "2100") {
         throw new FabricServiceError("VALIDATION", "Supplier subledger references require the payable account.");
+      }
+      if (line.partnerId) {
+        const partner = database.prepare(
+          "SELECT id FROM business_partners WHERE id = ?",
+        ).get(line.partnerId);
+        if (!partner) throw new FabricServiceError("NOT_FOUND", "The partner subledger record was not found.");
+        if (!["2210", "2220", "3200"].includes(line.accountCode)) {
+          throw new FabricServiceError("VALIDATION", "Partner subledger references require a partner account.");
+        }
       }
       if (transactionType === "manual_journal" || transactionType === "opening_balance") {
         if ((line.accountCode === "1300" || line.accountCode === "2200") && !line.customerId) {
@@ -204,8 +213,8 @@ export function postJournal(
     );
     const insertPosting = database.prepare(`
       INSERT INTO ledger_postings (
-        id, transaction_id, account_code, supplier_id, customer_id, debit_minor, credit_minor
-      ) VALUES (?, ?, ?, ?, ?, ?, ?)
+        id, transaction_id, account_code, supplier_id, customer_id, partner_id, debit_minor, credit_minor
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     `);
     for (const line of effectiveLines) {
       insertPosting.run(
@@ -214,6 +223,7 @@ export function postJournal(
         line.accountCode,
         line.supplierId ?? null,
         line.customerId ?? null,
+        line.partnerId ?? null,
         line.debitMinor ?? 0,
         line.creditMinor ?? 0,
       );

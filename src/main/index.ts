@@ -10,6 +10,7 @@ import { OwnerAuthService } from "./services/owner-auth";
 import { CustomerService } from "./services/customers";
 import { AccountingService } from "./services/accounting";
 import { ExpenseService } from "./services/expenses";
+import { PartnerService } from "./services/partners";
 import { ReportsService } from "./services/reports";
 import { ReturnsService } from "./services/returns";
 import { BackupService } from "./services/backups";
@@ -178,6 +179,7 @@ app.whenReady().then(async () => {
       new CustomerService(database),
       new AccountingService(database),
       new ExpenseService(database),
+      new PartnerService(database),
       new ReportsService(database),
       new ReturnsService(database),
       backups,

@@ -91,6 +91,20 @@ const api: DesktopApi = {
     list: (input) => ipcRenderer.invoke(channels.listExpenses, input),
     report: (input) => ipcRenderer.invoke(channels.expenseReport, input),
   },
+  partners: {
+    dashboard: (input) => ipcRenderer.invoke(channels.partnerDashboard, input),
+    list: (input) => ipcRenderer.invoke(channels.partnerList, input),
+    get: (input) => ipcRenderer.invoke(channels.partnerGet, input),
+    save: (input) => ipcRenderer.invoke(channels.partnerSave, input),
+    setActive: (input) => ipcRenderer.invoke(channels.partnerSetActive, input),
+    paymentAccounts: () => ipcRenderer.invoke(channels.partnerPaymentAccounts),
+    postTransaction: (input) => ipcRenderer.invoke(channels.partnerPostTransaction, input),
+    transactions: (input) => ipcRenderer.invoke(channels.partnerTransactions, input),
+    allocationPreview: (input) => ipcRenderer.invoke(channels.partnerAllocationPreview, input),
+    postAllocation: (input) => ipcRenderer.invoke(channels.partnerPostAllocation, input),
+    statement: (input) => ipcRenderer.invoke(channels.partnerStatement, input),
+    reverse: (input) => ipcRenderer.invoke(channels.partnerReverse, input),
+  },
 };
 
 contextBridge.exposeInMainWorld("electronAPI", api);
