@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { FormEvent } from "react";
+import { Search } from "lucide-react";
 import { businessConfig } from "@/config/business";
 import { getDesktopApi } from "@/lib/desktop-api";
 import { fabricInputSchema } from "@/shared/contracts";
@@ -929,7 +930,7 @@ export default function Home() {
               <div className="panel">
                 <div className="panel-toolbar">
                   <label className="search-field">
-                    <span aria-hidden="true">⌕</span>
+                    <Search size={15} aria-hidden="true" />
                     <Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search SKU, name, construction…" aria-label="Search fabrics" />
                   </label>
                   <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as StatusFilter)} aria-label="Filter fabric status">
@@ -1001,7 +1002,7 @@ export default function Home() {
               {apReconciliation && apReconciliation.differenceMinor !== 0 && <div className="error-banner" role="alert">Supplier subledger differs from the Accounts Payable control account by {formatMoney(apReconciliation.differenceMinor)}.</div>}
               <div className="panel">
                 <div className="panel-toolbar">
-                  <label className="search-field"><span aria-hidden="true">⌕</span><Input value={supplierSearch} onChange={(event) => setSupplierSearch(event.target.value)} placeholder="Search supplier code, name, phone…" aria-label="Search suppliers" /></label>
+                  <label className="search-field"><Search size={15} aria-hidden="true" /><Input value={supplierSearch} onChange={(event) => setSupplierSearch(event.target.value)} placeholder="Search supplier code, name, phone…" aria-label="Search suppliers" /></label>
                   <span className="history-count">{suppliers.length} suppliers</span>
                 </div>
                 <SupplierTable suppliers={suppliers} onOpen={(supplier) => void openSupplier(supplier)} />
@@ -1048,7 +1049,7 @@ export default function Home() {
                 <div className="panel">
                   <div className="panel-toolbar">
                     <label className="search-field">
-                      <span aria-hidden="true">⌕</span>
+                      <Search size={15} aria-hidden="true" />
                       <Input value={customerSearch} onChange={(event) => setCustomerSearch(event.target.value)} placeholder="Search customer code, name, phone…" aria-label="Search customers" />
                     </label>
                     <span className="history-count">{customers.length} customers</span>

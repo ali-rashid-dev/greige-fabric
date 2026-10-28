@@ -22,6 +22,7 @@ import type {
   PaymentAccount,
 } from "@/shared/types";
 import PrintActions from "./print-actions";
+import { Search } from "lucide-react";
 
 type View = "overview" | "partners" | "transactions" | "allocation" | "statements";
 type PartnerForm = {
@@ -501,12 +502,19 @@ export default function PartnershipManagement() {
     { key: "allocation", label: "Profit / loss allocation" },
     { key: "statements", label: "Statements" },
   ];
+  const collectionLabel = partnerType === "INVESTOR"
+    ? "Investors"
+    : partnerType === "PARTNER"
+      ? "Partners"
+      : "Partners & investors";
+  const newPartnerType = partnerType === "INVESTOR" ? "INVESTOR" : "PARTNER";
+  const addLabel = partnerType === "all" ? "Add partner or investor" : `Add ${newPartnerType === "INVESTOR" ? "investor" : "partner"}`;
 
   return (
     <div className="partnership-page">
       <nav className="expense-tabs" aria-label="Partnership sections">
         {nav.map((item) => (
-          <button key={item.key} className={view === item.key ? "active-tab" : ""} type="button" onClick={() => setView(item.key)}>
+          <button key={item.key} className={view === item.key ? "active-tab" : ""} type="button" aria-current={view === item.key ? "page" : undefined} onClick={() => setView(item.key)}>
             {item.label}
           </button>
         ))}
@@ -573,19 +581,20 @@ export default function PartnershipManagement() {
         <>
           <section className="panel">
             <header className="panel-heading">
-              <div><h2>{profile ? profile.partner.fullName : "Partners & investors"}</h2><p>{profile ? `${profile.partner.code} · ${profile.partner.partnerType} · ${profile.partner.active ? "Active" : "Inactive"}` : `${totalPartners} records · deactivation preserves history`}</p></div>
+              <div><h2>{profile ? profile.partner.fullName : collectionLabel}</h2><p>{profile ? `${profile.partner.code} · ${profile.partner.partnerType === "INVESTOR" ? "Investor" : "Partner"} · ${profile.partner.active ? "Active" : "Inactive"}` : `${totalPartners} ${partnerType === "all" ? "records" : partnerType === "INVESTOR" ? "investors" : "partners"} · deactivation preserves history`}</p></div>
               <div className="topbar-actions">
-                {profile && <button className="secondary-button" type="button" onClick={() => { setProfile(null); setPartnerForm(null); }}>All partners</button>}
+                {profile && <button className="secondary-button" type="button" onClick={() => { setProfile(null); setPartnerForm(null); }}>All records</button>}
                 {!profile && <button className="primary-button" type="button" onClick={() => {
-                  resetPartner({ ...EMPTY_PARTNER_FORM, joiningDate: localDate(), agreementStartDate: localDate() });
-                  setPartnerForm({ ...EMPTY_PARTNER_FORM, joiningDate: localDate(), agreementStartDate: localDate() });
-                }}>+ Add partner</button>}
+                  const values: PartnerForm = { ...EMPTY_PARTNER_FORM, partnerType: newPartnerType, joiningDate: localDate(), agreementStartDate: localDate() };
+                  resetPartner(values);
+                  setPartnerForm(values);
+                }}>+ {addLabel}</button>}
               </div>
             </header>
             {profile ? (
               <div className="partner-profile">
                 <div className="partner-profile-grid">
-                  <p><span>Type</span><strong>{profile.partner.partnerType} · {profile.partner.investmentStructure}</strong></p>
+                  <p><span>Type</span><strong>{profile.partner.partnerType === "INVESTOR" ? "Investor" : "Partner"} · {profile.partner.investmentStructure}</strong></p>
                   <p><span>Phone / email</span><strong>{profile.partner.phone || "—"} · {profile.partner.email || "—"}</strong></p>
                   <p><span>Joining date</span><strong>{formatDate(profile.partner.joiningDate)}</strong></p>
                   <p><span>Agreement effective date</span><strong>{formatDate(profile.partner.agreementStartDate)}</strong></p>
@@ -618,26 +627,26 @@ export default function PartnershipManagement() {
             ) : (
               <>
                 <div className="panel-toolbar partner-list-toolbar">
-                  <label className="search-field"><span aria-hidden="true">⌕</span><input aria-label="Search partners" placeholder="Search name, code, phone, or email" value={query} onChange={(event) => { setQuery(event.target.value); setPage(1); }} /></label>
+                  <label className="search-field"><Search size={15} aria-hidden="true" /><input aria-label="Search partners" placeholder="Search name, code, phone, or email" value={query} onChange={(event) => { setQuery(event.target.value); setPage(1); }} /></label>
                   <select aria-label="Filter partner status" value={status} onChange={(event) => { setStatus(event.target.value as typeof status); setPage(1); }}><option value="active">Active</option><option value="inactive">Inactive</option><option value="all">All statuses</option></select>
                   <select aria-label="Filter partner type" value={partnerType} onChange={(event) => { setPartnerType(event.target.value as typeof partnerType); setPage(1); }}><option value="all">All types</option><option value="PARTNER">Partners</option><option value="INVESTOR">Investors</option></select>
                   <select aria-label="Sort partners" value={`${sortBy}:${sortDirection}`} onChange={(event) => { const [field, direction] = event.target.value.split(":"); setSortBy(field as typeof sortBy); setSortDirection(direction as typeof sortDirection); }}><option value="name:asc">Name A–Z</option><option value="name:desc">Name Z–A</option><option value="code:asc">Code A–Z</option><option value="joiningDate:desc">Newest first</option><option value="joiningDate:asc">Oldest first</option></select>
                 </div>
-                <div className="table-wrap"><table><thead><tr><th>Partner</th><th>Type / structure</th><th>Phone</th><th>Joined</th><th>Share</th><th>Status</th><th /></tr></thead>
+                <div className="table-wrap"><table><thead><tr><th>{partnerType === "INVESTOR" ? "Investor" : partnerType === "PARTNER" ? "Partner" : "Partner / investor"}</th><th>Type / structure</th><th>Phone</th><th>Joined</th><th>Share</th><th>Status</th><th /></tr></thead>
                   <tbody>{partners.map((partner) => <tr key={partner.id}>
                     <td><button className="fabric-link" type="button" onClick={() => void openProfile(partner)}><strong>{partner.fullName}</strong><span>{partner.code}</span></button></td>
-                    <td>{partner.partnerType} · {partner.investmentStructure}</td><td>{partner.phone || "—"}</td><td>{formatDate(partner.joiningDate)}</td><td>{percent(partner.profitSharingBps)}</td>
+                    <td>{partner.partnerType === "INVESTOR" ? "Investor" : "Partner"} · {partner.investmentStructure}</td><td>{partner.phone || "—"}</td><td>{formatDate(partner.joiningDate)}</td><td>{percent(partner.profitSharingBps)}</td>
                     <td><span className={`partner-status ${partner.active ? "active" : ""}`}>{partner.active ? "Active" : "Inactive"}</span></td>
-                    <td><button className="table-action" type="button" onClick={() => void openProfile(partner)}>View</button></td>
+                    <td><button className="table-action" type="button" aria-label={`View ${partner.partnerType === "INVESTOR" ? "investor" : "partner"} ${partner.fullName}`} onClick={() => void openProfile(partner)}>View</button></td>
                   </tr>)}</tbody>
-                </table>{!loading && !partners.length && <p className="empty-state">No partners match these filters. Add a partner or change the search.</p>}</div>
-                <div className="partner-pagination"><span>{totalPartners ? `${(page - 1) * pageSize + 1}–${Math.min(page * pageSize, totalPartners)} of ${totalPartners}` : "0 partners"}</span><button className="secondary-button" type="button" disabled={page <= 1} onClick={() => setPage((value) => value - 1)}>Previous</button><button className="secondary-button" type="button" disabled={page * pageSize >= totalPartners} onClick={() => setPage((value) => value + 1)}>Next</button></div>
+                </table>{!loading && !partners.length && <p className="empty-state">No {collectionLabel.toLocaleLowerCase()} match these filters. Add one or change the search.</p>}</div>
+                <div className="partner-pagination"><span>{totalPartners ? `${(page - 1) * pageSize + 1}–${Math.min(page * pageSize, totalPartners)} of ${totalPartners}` : `0 ${partnerType === "INVESTOR" ? "investors" : partnerType === "PARTNER" ? "partners" : "records"}`}</span><button className="secondary-button" type="button" disabled={page <= 1} onClick={() => setPage((value) => value - 1)}>Previous</button><button className="secondary-button" type="button" disabled={page * pageSize >= totalPartners} onClick={() => setPage((value) => value + 1)}>Next</button></div>
               </>
             )}
           </section>
           {partnerForm && (
             <section className="panel partner-form-panel">
-              <header className="panel-heading"><div><h2>{partnerForm.id ? "Edit partner" : "Add partner or investor"}</h2><p>Agreement terms are retained as effective-dated history.</p></div></header>
+              <header className="panel-heading"><div><h2>{partnerForm.id ? `Edit ${partnerForm.partnerType === "INVESTOR" ? "investor" : "partner"}` : `Add ${partnerForm.partnerType === "INVESTOR" ? "investor" : "partner"}`}</h2><p>Agreement terms are retained as effective-dated history.</p></div></header>
               <form className="fabric-form" onSubmit={handlePartnerSubmit((values) => void savePartner(values))}>
                 <div className="form-grid">
                   <Field label="Partner code"><input required maxLength={40} {...registerPartner("code")} /></Field>
@@ -655,7 +664,7 @@ export default function PartnershipManagement() {
                   <Field label="Internal notes"><input maxLength={4000} {...registerPartner("internalNotes")} /></Field>
                 </div>
                 <label className="partner-checkbox"><input type="checkbox" {...registerPartner("active")} /> Active</label>
-                <div className="modal-actions"><button className="secondary-button" type="button" onClick={() => setPartnerForm(null)}>Cancel</button><button className="primary-button" type="submit" disabled={saving}>{saving ? "Saving…" : "Save partner"}</button></div>
+                <div className="modal-actions"><button className="secondary-button" type="button" onClick={() => setPartnerForm(null)}>Cancel</button><button className="primary-button" type="submit" disabled={saving}>{saving ? "Saving…" : `Save ${partnerForm.partnerType === "INVESTOR" ? "investor" : "partner"}`}</button></div>
               </form>
             </section>
           )}

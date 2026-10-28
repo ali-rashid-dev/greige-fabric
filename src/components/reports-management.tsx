@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { BarChart3 } from "lucide-react";
 import { businessConfig } from "@/config/business";
 import { getDesktopApi } from "@/lib/desktop-api";
 import type { AnalyticsReportInput } from "@/shared/contracts";
@@ -209,6 +210,14 @@ export default function ReportsManagement() {
 
   const pageCount = report ? Math.max(1, Math.ceil(report.totalRows / report.pageSize)) : 1;
   const canRun = from <= to && !loading;
+  const hasUnappliedChanges = Boolean(loadedInput && (
+    reportType !== loadedInput.reportType
+    || from !== loadedInput.from
+    || to !== loadedInput.to
+    || search !== loadedInput.search
+    || pageSize !== loadedInput.pageSize
+    || (reportType === "general_ledger" && accountCode !== loadedInput.accountCode)
+  ));
 
   return (
     <div className="reports-page">
@@ -217,7 +226,7 @@ export default function ReportsManagement() {
           <div><h2>Financial reports</h2><p>Review sales, inventory, and accounting reports for the selected date range.</p></div>
         </header>
         <form className="report-filters" onSubmit={(event) => void runReport(event)}>
-          <label>Report
+          <label><span>Report</span>
             <select value={reportType} onChange={(event) => {
               const next = reportOptions.find((option) => option.value === event.target.value);
               if (next) {
@@ -230,10 +239,10 @@ export default function ReportsManagement() {
               {reportOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
             </select>
           </label>
-          <label>From <input type="date" required value={from} onChange={(event) => setFrom(event.target.value)} /></label>
-          <label>To <input type="date" required value={to} onChange={(event) => setTo(event.target.value)} /></label>
+          <label><span>From</span><input type="date" required value={from} onChange={(event) => setFrom(event.target.value)} /></label>
+          <label><span>To</span><input type="date" required value={to} onChange={(event) => setTo(event.target.value)} /></label>
           {reportType === "general_ledger" && (
-            <label>Account
+            <label><span>Account</span>
               <select value={accountCode} onFocus={() => void loadAccounts().catch((loadError: unknown) => {
                 setError(loadError instanceof Error ? loadError.message : "Unable to load ledger accounts.");
               })} onChange={(event) => setAccountCode(event.target.value)}>
@@ -241,8 +250,8 @@ export default function ReportsManagement() {
               </select>
             </label>
           )}
-          <label>Search <input value={search} maxLength={200} onChange={(event) => setSearch(event.target.value)} placeholder="Filter report rows" /></label>
-          <label>Rows per page
+          <label><span>Search</span><input value={search} maxLength={200} onChange={(event) => setSearch(event.target.value)} placeholder="Filter report rows" /></label>
+          <label><span>Rows per page</span>
             <select value={pageSize} onChange={(event) => {
               setPageSize(Number(event.target.value));
               setPage(1);
@@ -250,10 +259,19 @@ export default function ReportsManagement() {
               {[25, 50, 100, 250, 500].map((size) => <option key={size} value={size}>{size}</option>)}
             </select>
           </label>
-          <button className="primary-button" disabled={!canRun}>{loading ? "Generating…" : "Run report"}</button>
+          <button className="primary-button" disabled={!canRun}>{loading ? "Generating…" : report ? "Update report" : "Run report"}</button>
+          {from > to && <p className="report-validation" role="alert">End date must be on or after the start date.</p>}
         </form>
         {error && <div className="error-banner" role="alert">{error}</div>}
       </section>
+
+      {!report && !loading && (
+        <section className="panel report-empty-state">
+          <div className="report-empty-icon" aria-hidden="true"><BarChart3 size={20} /></div>
+          <h2>Build a report</h2>
+          <p>Choose a report and date range, then run it to see totals, detailed rows, and export options.</p>
+        </section>
+      )}
 
       {report && (
         <>
@@ -286,10 +304,11 @@ export default function ReportsManagement() {
           <section className="panel report-table-panel">
             <header className="panel-heading">
               <div><h2>{reportOptions.find((option) => option.value === report.reportType)?.label}</h2><p>{report.from} – {report.to} · {report.totalRows} matching rows</p></div>
-              <button className="secondary-button" onClick={() => void exportCsv()} disabled={report.rows.length === 0 || exporting}>
+              <button className="secondary-button" title="Export the currently displayed report results" onClick={() => void exportCsv()} disabled={report.rows.length === 0 || exporting}>
                 {exporting ? "Exporting…" : "Export CSV"}
               </button>
             </header>
+            {hasUnappliedChanges && <p className="report-stale-notice" role="status">Filters have changed. These are the previous results; select “Update report” to apply the new filters.</p>}
             <div className="table-scroll">
               <table>
                 <thead><tr>{report.columns.map((column) => <th key={column.key} className={column.format === "money" || column.format === "number" ? "numeric" : ""}>{column.label}</th>)}</tr></thead>
