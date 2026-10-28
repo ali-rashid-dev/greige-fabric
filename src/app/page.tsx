@@ -5,13 +5,24 @@ import type { FormEvent } from "react";
 import { businessConfig } from "@/config/business";
 import { getDesktopApi } from "@/lib/desktop-api";
 import { fabricInputSchema } from "@/shared/contracts";
-import PrintActions from "./print-actions";
-import SalesPos from "./sales-pos";
-import ExpensesManagement from "./expenses-management";
-import ReportsManagement from "./reports-management";
-import ReturnsManagement from "./returns-management";
-import BackupManagement from "./backup-management";
-import PartnershipManagement from "./partnership-management";
+import { AppSidebar } from "@/components/app-sidebar";
+import type { Section } from "@/components/app-sidebar";
+import { EmptyState, FormField, Metric, StatusBadge, SummaryCard } from "@/components/management-ui";
+import { CustomerTable, FabricTable, MovementTable, SupplierTable, ValuationTable } from "@/components/management-tables";
+import { InvoiceCard } from "@/components/invoice-card";
+import { CustomerDetailPage, StatementTable } from "@/components/customer-detail";
+import type { CustomerTab } from "@/components/customer-detail";
+import { Modal } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { formatDate, formatMeters, formatMoney } from "@/lib/format";
+import PrintActions from "../components/print-actions";
+import SalesPos from "../components/sales-pos";
+import ExpensesManagement from "../components/expenses-management";
+import ReportsManagement from "../components/reports-management";
+import ReturnsManagement from "../components/returns-management";
+import BackupManagement from "../components/backup-management";
+import PartnershipManagement from "../components/partnership-management";
 import type {
   Fabric,
   FabricDetails,
@@ -31,10 +42,8 @@ import type {
   SupplierStatement,
 } from "@/shared/types";
 
-type Section = "pos" | "fabrics" | "stock" | "suppliers" | "customers" | "invoices" | "expenses" | "reports" | "returns" | "backups" | "partners";
 type StatusFilter = "active" | "all" | "inactive" | "low-stock";
 type InventoryView = "overview" | "movements" | "low-stock" | "valuation";
-type CustomerTab = "overview" | "sales" | "payments" | "ledger";
 
 interface FabricFormValues {
   sku: string;
@@ -59,26 +68,6 @@ const emptyFabric: FabricFormValues = {
   sellingRate: "",
   reorderThresholdMeters: "",
 };
-
-function formatMoney(minor: number): string {
-  const amount = new Intl.NumberFormat("en-PK", {
-    maximumFractionDigits: 2,
-  }).format(minor / 100);
-  return `${businessConfig.currency} ${amount}`;
-}
-
-function formatMeters(millimeters: number): string {
-  return `${(millimeters / 1000).toLocaleString("en-PK", {
-    maximumFractionDigits: 3,
-  })} m`;
-}
-
-function formatDate(value: string): string {
-  return new Intl.DateTimeFormat("en-PK", {
-    dateStyle: "medium",
-    timeStyle: "short",
-  }).format(new Date(value));
-}
 
 function getLocalDateInputValue(): string {
   const date = new Date();
@@ -872,56 +861,11 @@ export default function Home() {
 
   return (
     <main className="app-shell">
-      <aside className="sidebar">
-        <div className="brand">
-          <div className="brand-mark" aria-hidden="true"><span /><span /><span /></div>
-          <div>
-            <p className="brand-name">{businessConfig.name}</p>
-            <p className="brand-caption">FABRIC POS</p>
-          </div>
-        </div>
-        <nav className="main-nav" aria-label="Main navigation">
-          <button className={section === "pos" ? "nav-item active" : "nav-item"} onClick={() => setSection("pos")}>
-            <span className="nav-icon">＋</span> New sale
-          </button>
-          <button className={section === "fabrics" ? "nav-item active" : "nav-item"} onClick={() => setSection("fabrics")}>
-            <span className="nav-icon">▤</span> Fabric catalog
-          </button>
-          <button className={section === "stock" ? "nav-item active" : "nav-item"} onClick={() => setSection("stock")}>
-            <span className="nav-icon">▥</span> Inventory
-            {lowStockFabrics.length > 0 && <span className="nav-count">{lowStockFabrics.length}</span>}
-          </button>
-          <button className={section === "suppliers" ? "nav-item active" : "nav-item"} onClick={() => setSection("suppliers")}>
-            <span className="nav-icon">♧</span> Suppliers
-          </button>
-          <button className={section === "customers" ? "nav-item active" : "nav-item"} onClick={() => setSection("customers")}>
-            <span className="nav-icon">♙</span> Customers
-          </button>
-          <button className={section === "invoices" ? "nav-item active" : "nav-item"} onClick={() => setSection("invoices")}>
-            <span className="nav-icon">▧</span> Sales history
-          </button>
-          <button className={section === "expenses" ? "nav-item active" : "nav-item"} onClick={() => setSection("expenses")}>
-            <span className="nav-icon">₨</span> Expenses & cashbook
-          </button>
-          <button className={section === "partners" ? "nav-item active" : "nav-item"} onClick={() => setSection("partners")}>
-            <span className="nav-icon">♧</span> Partnership & Investors
-          </button>
-          <button className={section === "reports" ? "nav-item active" : "nav-item"} onClick={() => setSection("reports")}>
-            <span className="nav-icon">▤</span> Reports & analytics
-          </button>
-          <button className={section === "returns" ? "nav-item active" : "nav-item"} onClick={() => setSection("returns")}>
-            <span className="nav-icon">↶</span> Returns & audit
-          </button>
-          <button className={section === "backups" ? "nav-item active" : "nav-item"} onClick={() => setSection("backups")}>
-            <span className="nav-icon">⤓</span> Backup & recovery
-          </button>
-        </nav>
-        <div className="sidebar-bottom">
-          <span className="connection-dot" />
-          <span>Saved on this device</span>
-          <span className="currency-small">{businessConfig.currency}</span>
-        </div>
-      </aside>
+      <AppSidebar
+        section={section}
+        lowStockCount={lowStockFabrics.length}
+        onSectionChange={setSection}
+      />
 
       <section className="main-content">
         <header className="topbar">
@@ -986,7 +930,7 @@ export default function Home() {
                 <div className="panel-toolbar">
                   <label className="search-field">
                     <span aria-hidden="true">⌕</span>
-                    <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search SKU, name, construction…" aria-label="Search fabrics" />
+                    <Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search SKU, name, construction…" aria-label="Search fabrics" />
                   </label>
                   <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as StatusFilter)} aria-label="Filter fabric status">
                     <option value="active">Active fabrics</option>
@@ -1001,48 +945,50 @@ export default function Home() {
           )}
 
           {section === "stock" && (
-            <>
+            <Tabs
+              value={inventoryView}
+              onValueChange={(value) => {
+                if (value === "overview" || value === "movements" || value === "low-stock" || value === "valuation") {
+                  setInventoryView(value);
+                }
+              }}
+              className="inventory-workspace"
+            >
               <div className="summary-grid stock-summary-grid">
                 <SummaryCard label="Active qualities" value={stock?.activeProducts ?? "—"} icon="✓" />
                 <SummaryCard label="Low stock" value={inventoryReport?.lowStockCount ?? stock?.lowStockCount ?? "—"} icon="!" warning={Boolean(inventoryReport?.lowStockCount)} />
                 <SummaryCard label="Total stock" value={formatMeters(inventoryReport?.totalStockMm ?? stock?.totalStockMm ?? 0)} icon="▥" />
                 <SummaryCard label="Inventory valuation" value={formatMoney(inventoryReport?.totalValuationMinor ?? 0)} icon="₨" />
               </div>
-              <div className="inventory-tabs" role="tablist" aria-label="Inventory reports">
-                {([
-                  ["overview", "Overview"],
-                  ["movements", "Movement history"],
-                  ["low-stock", "Low stock"],
-                  ["valuation", "Valuation"],
-                ] as Array<[InventoryView, string]>).map(([view, label]) => (
-                  <button key={view} className={inventoryView === view ? "active" : ""} onClick={() => setInventoryView(view)}>{label}</button>
-                ))}
-              </div>
-              {inventoryView === "overview" && (
-                <>
-                  <div className="section-heading"><div><h2>Stock by fabric</h2><p>All quantities are stored in millimeters and displayed in meters.</p></div></div>
-                  <div className="panel"><FabricTable fabrics={stock?.fabrics ?? []} loading={loading} stockView onDetails={openDetails} onEdit={openEditForm} onAdjust={openAdjustment} /></div>
-                </>
-              )}
-              {inventoryView === "movements" && (
+              <TabsList className="inventory-tabs" aria-label="Inventory reports">
+                <TabsTrigger value="overview">Overview</TabsTrigger>
+                <TabsTrigger value="movements">Movement history</TabsTrigger>
+                <TabsTrigger value="low-stock">Low stock</TabsTrigger>
+                <TabsTrigger value="valuation">Valuation</TabsTrigger>
+              </TabsList>
+              <TabsContent value="overview" className="inventory-tab-panel">
+                <div className="section-heading"><div><h2>Stock by fabric</h2><p>All quantities are stored in millimeters and displayed in meters.</p></div></div>
+                <div className="panel"><FabricTable fabrics={stock?.fabrics ?? []} loading={loading} stockView onDetails={openDetails} onEdit={openEditForm} onAdjust={openAdjustment} /></div>
+              </TabsContent>
+              <TabsContent value="movements" className="inventory-tab-panel">
                 <div className="panel">
                   <div className="section-heading panel-section-heading"><div><h2>Stock movement history</h2><p>Each entry records its reference, actor and timestamp.</p></div></div>
                   <MovementTable movements={movements} />
                 </div>
-              )}
-              {inventoryView === "low-stock" && (
+              </TabsContent>
+              <TabsContent value="low-stock" className="inventory-tab-panel">
                 <div className="panel">
                   <div className="section-heading panel-section-heading"><div><h2>Low-stock report</h2><p>Active fabrics at or below their reorder threshold.</p></div></div>
                   <FabricTable fabrics={stock?.fabrics.filter((fabric) => fabric.active && fabric.stockMm <= fabric.reorderThresholdMm) ?? []} loading={loading} stockView onDetails={openDetails} onEdit={openEditForm} onAdjust={openAdjustment} />
                 </div>
-              )}
-              {inventoryView === "valuation" && (
+              </TabsContent>
+              <TabsContent value="valuation" className="inventory-tab-panel">
                 <div className="panel">
                   <div className="section-heading panel-section-heading"><div><h2>Inventory valuation</h2><p>Based on recorded stock value using weighted-average purchase cost.</p></div></div>
                   <ValuationTable report={inventoryReport} />
                 </div>
-              )}
-            </>
+              </TabsContent>
+            </Tabs>
           )}
 
           {section === "suppliers" && (
@@ -1055,7 +1001,7 @@ export default function Home() {
               {apReconciliation && apReconciliation.differenceMinor !== 0 && <div className="error-banner" role="alert">Supplier subledger differs from the Accounts Payable control account by {formatMoney(apReconciliation.differenceMinor)}.</div>}
               <div className="panel">
                 <div className="panel-toolbar">
-                  <label className="search-field"><span aria-hidden="true">⌕</span><input value={supplierSearch} onChange={(event) => setSupplierSearch(event.target.value)} placeholder="Search supplier code, name, phone…" aria-label="Search suppliers" /></label>
+                  <label className="search-field"><span aria-hidden="true">⌕</span><Input value={supplierSearch} onChange={(event) => setSupplierSearch(event.target.value)} placeholder="Search supplier code, name, phone…" aria-label="Search suppliers" /></label>
                   <span className="history-count">{suppliers.length} suppliers</span>
                 </div>
                 <SupplierTable suppliers={suppliers} onOpen={(supplier) => void openSupplier(supplier)} />
@@ -1103,7 +1049,7 @@ export default function Home() {
                   <div className="panel-toolbar">
                     <label className="search-field">
                       <span aria-hidden="true">⌕</span>
-                      <input value={customerSearch} onChange={(event) => setCustomerSearch(event.target.value)} placeholder="Search customer code, name, phone…" aria-label="Search customers" />
+                      <Input value={customerSearch} onChange={(event) => setCustomerSearch(event.target.value)} placeholder="Search customer code, name, phone…" aria-label="Search customers" />
                     </label>
                     <span className="history-count">{customers.length} customers</span>
                   </div>
@@ -1534,325 +1480,4 @@ export default function Home() {
       )}
     </main>
   );
-}
-
-function SummaryCard({ label, value, icon, warning = false }: { label: string; value: string | number; icon: string; warning?: boolean }) {
-  return <article className="summary-card"><span className={warning ? "summary-icon warning" : "summary-icon"}>{icon}</span><div><p>{label}</p><strong>{value}</strong></div></article>;
-}
-
-function FabricTable({ fabrics, loading, stockView = false, onDetails, onEdit, onAdjust }: {
-  fabrics: Fabric[];
-  loading: boolean;
-  stockView?: boolean;
-  onDetails: (fabric: Fabric) => void;
-  onEdit: (fabric: Fabric) => void;
-  onAdjust: (fabric: Fabric) => void;
-}) {
-  if (loading && fabrics.length === 0) return <div className="table-state">Loading fabric catalog…</div>;
-  if (fabrics.length === 0) return <EmptyState title="No fabrics found" copy="Try another search or add your first fabric quality." />;
-  return (
-    <div className="table-wrap">
-      <table>
-        <thead><tr><th>Fabric quality</th><th>Construction</th><th>Width / GSM</th><th>Rate / metre</th><th>Stock</th><th>Status</th><th><span className="sr-only">Actions</span></th></tr></thead>
-        <tbody>
-          {fabrics.map((fabric) => {
-            const low = fabric.active && fabric.stockMm <= fabric.reorderThresholdMm;
-            return (
-              <tr key={fabric.id} className="fabric-row">
-                <td><button className="fabric-link" onClick={() => onDetails(fabric)}><strong>{fabric.name}</strong><span>{fabric.sku} · {fabric.composition}</span></button></td>
-                <td>{fabric.construction}</td>
-                <td>{fabric.widthInches} in <span className="cell-muted">/</span> {fabric.gsm} GSM</td>
-                <td className="rate-cell">{formatMoney(fabric.sellingRateMinor)}<span> / m</span></td>
-                <td><span className={low ? "stock-value low" : "stock-value"}>{formatMeters(fabric.stockMm)}</span>{stockView && <small className="threshold-copy">Reorder {formatMeters(fabric.reorderThresholdMm)}</small>}</td>
-                <td><StatusBadge active={fabric.active} low={low} /></td>
-                <td><div className="row-actions"><button title="Adjust stock" aria-label={`Adjust stock for ${fabric.sku}`} onClick={() => onAdjust(fabric)}>±</button><button title="Edit fabric" aria-label={`Edit ${fabric.sku}`} onClick={() => onEdit(fabric)}>···</button></div></td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
-    </div>
-  );
-}
-
-function MovementTable({ movements }: { movements: InventoryMovement[] }) {
-  if (movements.length === 0) return <EmptyState title="No stock movements" copy="Opening stock, supplier receipts, sales and authorized adjustments will appear here." />;
-  return (
-    <div className="table-wrap">
-      <table>
-        <thead><tr><th>Date</th><th>Fabric</th><th>Type</th><th>Quantity</th><th>Reference / reason</th><th>Authorized user</th></tr></thead>
-        <tbody>{movements.map((movement) => <tr key={movement.id}>
-          <td>{formatDate(movement.createdAt)}</td>
-          <td><strong>{movement.sku}</strong><br /><span className="cell-muted">{movement.fabricName}</span></td>
-          <td className="capitalize">{movement.movementType}</td>
-          <td className={movement.quantityMm < 0 ? "movement-negative" : "movement-positive"}>{movement.quantityMm > 0 ? "+" : ""}{formatMeters(movement.quantityMm)}</td>
-          <td><strong>{movement.reference}</strong><br /><span className="cell-muted">{movement.reason}</span></td>
-          <td>{movement.authorizedUser}</td>
-        </tr>)}</tbody>
-      </table>
-    </div>
-  );
-}
-
-function ValuationTable({ report }: { report: InventoryReport | null }) {
-  if (!report || report.valuation.length === 0) return <EmptyState title="No inventory to value" copy="Record opening stock or a supplier purchase to begin inventory valuation." />;
-  return (
-    <div className="table-wrap">
-      <table>
-        <thead><tr><th>Fabric</th><th>On hand</th><th>Average cost / m</th><th>Inventory value</th><th>Reorder point</th></tr></thead>
-        <tbody>{report.valuation.map((item) => <tr key={item.fabricId}>
-          <td><strong>{item.sku}</strong><br /><span className="cell-muted">{item.name}</span></td>
-          <td>{formatMeters(item.stockQtyMm)}</td>
-          <td>{formatMoney(item.unitCostMinor)}</td>
-          <td><strong>{formatMoney(item.valueMinor)}</strong></td>
-          <td>{formatMeters(item.reorderThresholdMm)}{item.lowStock && <span className="status-badge low valuation-low">Low</span>}</td>
-        </tr>)}</tbody>
-      </table>
-      <div className="report-total"><span>Active stock valuation</span><strong>{formatMoney(report.totalValuationMinor)}</strong></div>
-    </div>
-  );
-}
-
-function SupplierTable({ suppliers, onOpen }: { suppliers: Supplier[]; onOpen: (supplier: Supplier) => void }) {
-  if (suppliers.length === 0) return <EmptyState title="No suppliers found" copy="Add a fabric supplier to track purchases and outstanding balances." />;
-  return (
-    <div className="table-wrap">
-      <table>
-        <thead><tr><th>Supplier</th><th>Phone / contact</th><th>Purchases</th><th>Payments</th><th>Outstanding balance</th><th /></tr></thead>
-        <tbody>{suppliers.map((supplier) => <tr key={supplier.id}>
-          <td><button className="fabric-link" onClick={() => onOpen(supplier)}><strong>{supplier.name}</strong><span>{supplier.code}</span></button></td>
-          <td>{supplier.phone}{supplier.contactName ? <><br /><span className="cell-muted">{supplier.contactName}</span></> : null}</td>
-          <td>{supplier.purchaseCount}</td>
-          <td>{supplier.paymentCount}</td>
-          <td><strong>{formatMoney(supplier.outstandingMinor)}</strong></td>
-          <td><button className="secondary-button table-button" onClick={() => onOpen(supplier)}>View account</button></td>
-        </tr>)}</tbody>
-      </table>
-    </div>
-  );
-}
-
-function CustomerTable({ customers: customerRows, onOpen }: { customers: Customer[]; onOpen: (customer: Customer) => void }) {
-  if (customerRows.length === 0) return <EmptyState title="No customers found" copy="Add a customer to track credit sales, receipts and statements." />;
-  return (
-    <div className="table-wrap">
-      <table>
-        <thead><tr><th>Customer</th><th>Phone</th><th>Sales</th><th>Receipts</th><th>Credit limit</th><th>Outstanding</th><th /></tr></thead>
-        <tbody>{customerRows.map((customer) => <tr key={customer.id}>
-          <td><button className="fabric-link" onClick={() => onOpen(customer)}><strong>{customer.name}</strong><span>{customer.code}</span></button></td>
-          <td>{customer.phone || "—"}</td>
-          <td>{customer.salesCount}</td>
-          <td>{customer.receiptCount}</td>
-          <td>{formatMoney(customer.creditLimitMinor)}</td>
-          <td><strong>{formatMoney(customer.outstandingMinor)}</strong></td>
-          <td><button className="secondary-button table-button" onClick={() => onOpen(customer)}>View account</button></td>
-        </tr>)}</tbody>
-      </table>
-    </div>
-  );
-}
-
-function CustomerDetailPage({
-  details,
-  tab,
-  onTabChange,
-  onEdit,
-  onReceive,
-  onReverseReceipt,
-  onPrintReceipt,
-  onPrintInvoice,
-  statement,
-  statementDates,
-  onStatementDatesChange,
-  onStatementSubmit,
-}: {
-  details: CustomerDetails;
-  tab: CustomerTab;
-  onTabChange: (tab: CustomerTab) => void;
-  onEdit: () => void;
-  onReceive: () => void;
-  onReverseReceipt: (receipt: CustomerReceipt) => void;
-  onPrintReceipt: (receipt: CustomerReceipt) => void;
-  onPrintInvoice: (invoice: Invoice) => void;
-  statement: CustomerStatement | null;
-  statementDates: { from: string; to: string };
-  onStatementDatesChange: (dates: { from: string; to: string }) => void;
-  onStatementSubmit: (event: FormEvent<HTMLFormElement>) => void;
-}) {
-  const { customer } = details;
-  const availableCreditMinor = Math.max(0, customer.creditLimitMinor - customer.outstandingMinor);
-  return (
-    <div className="customer-detail-page">
-      <div className="detail-head">
-        <div><span className="sku-label">{customer.code}</span><h2>{customer.name}</h2><p>{customer.phone || "No phone recorded"}{customer.address ? ` · ${customer.address}` : ""}</p></div>
-        <StatusBadge active={customer.active} />
-      </div>
-      <div className="detail-metrics">
-        <Metric label="Outstanding receivable" value={formatMoney(customer.outstandingMinor)} />
-        <Metric label="Customer advances" value={formatMoney(customer.advanceMinor)} />
-        <Metric label="Credit limit" value={formatMoney(customer.creditLimitMinor)} />
-        <Metric label="Available credit" value={formatMoney(availableCreditMinor)} />
-        <Metric label="Payment terms" value={`${customer.paymentTermsDays} days`} />
-      </div>
-      <div className="detail-actions customer-actions">
-        <button className="secondary-button" onClick={onEdit}>Edit customer</button>
-        <button className="primary-button" onClick={onReceive}>Record receipt / advance</button>
-      </div>
-      <div className="inventory-tabs customer-tabs" role="tablist" aria-label="Customer account details">
-        {([
-          ["overview", "Overview"],
-          ["sales", "Sales"],
-          ["payments", "Payments"],
-          ["ledger", "Ledger"],
-        ] as Array<[CustomerTab, string]>).map(([value, label]) => (
-          <button key={value} role="tab" aria-selected={tab === value} className={tab === value ? "active" : ""} onClick={() => onTabChange(value)}>{label}</button>
-        ))}
-      </div>
-      {tab === "overview" && (
-        <div className="customer-overview">
-          <section className="panel customer-contact">
-            <div className="section-heading panel-section-heading"><div><h2>Account overview</h2><p>Receivables and unallocated advances are tracked separately.</p></div></div>
-            <dl><div><dt>Customer code</dt><dd>{customer.code}</dd></div><div><dt>Phone</dt><dd>{customer.phone || "—"}</dd></div><div><dt>Address</dt><dd>{customer.address || "—"}</dd></div><div><dt>Sales invoices</dt><dd>{customer.salesCount}</dd></div><div><dt>Receipts</dt><dd>{customer.receiptCount}</dd></div></dl>
-          </section>
-          <section className="panel customer-recent">
-            <div className="section-heading panel-section-heading"><div><h2>Recent activity</h2><p>Latest sales and receipts for this account.</p></div></div>
-            {details.sales.length === 0 && details.receipts.length === 0 ? <p className="muted-message">No customer transactions recorded.</p> : (
-              <div className="history-block">
-                {details.sales.slice(0, 3).map((invoice) => <div className="history-row" key={invoice.id}><div><strong>{invoice.invoiceNumber} · Sale</strong><span>{formatDate(invoice.createdAt)}</span></div><div className="history-price"><strong>{formatMoney(invoice.totalMinor)}</strong></div></div>)}
-                {details.receipts.slice(0, 3).map((receipt) => <div className="history-row" key={receipt.id}><div><strong>{receipt.receiptNumber} · Receipt</strong><span>{formatDate(receipt.createdAt)} · {receipt.account.toUpperCase()}</span></div><div className="history-price"><strong>{formatMoney(receipt.amountMinor)}</strong></div></div>)}
-              </div>
-            )}
-          </section>
-        </div>
-      )}
-      {tab === "sales" && (
-        <div className="customer-tab-content">
-          <div className="section-heading"><div><h2>Sales history</h2><p>Invoice totals and line prices are preserved as recorded.</p></div><span className="history-count">{details.sales.length} invoices</span></div>
-          {details.sales.length === 0 ? <EmptyState title="No sales recorded" copy="Credit invoices for this customer will appear here." /> : <div className="invoice-list">{details.sales.map((invoice) => <InvoiceCard key={invoice.id} invoice={invoice} onPrint={onPrintInvoice} />)}</div>}
-        </div>
-      )}
-      {tab === "payments" && (
-        <div className="customer-tab-content">
-          <div className="section-heading"><div><h2>Payments received</h2><p>Receipts are allocated to invoices or recorded as customer advances.</p></div><span className="history-count">{details.receipts.length} receipts</span></div>
-          {details.receipts.length === 0 ? <EmptyState title="No receipts recorded" copy="Customer payments will appear here." /> : (
-            <div className="panel"><div className="table-wrap"><table>
-              <thead><tr><th>Receipt</th><th>Date</th><th>Payment method</th><th>Applied to</th><th>Reference / note</th><th>Amount</th><th>Actions</th></tr></thead>
-              <tbody>{details.receipts.map((receipt) => <tr key={receipt.id}>
-                <td><strong>{receipt.receiptNumber}</strong>{receipt.reversedAt && <small className="reversed-label">Reversed</small>}</td>
-                <td>{formatDate(receipt.createdAt)}</td><td>{receipt.paymentMethod}</td><td>{receipt.invoiceNumber ?? "Advance"}</td>
-                <td>{receipt.reference || receipt.note || "—"}{receipt.reversalReason && <small className="reversed-label">Reason: {receipt.reversalReason}</small>}</td>
-                <td><strong>{formatMoney(receipt.amountMinor)}</strong></td>
-                <td><div className="payment-history-actions"><button type="button" className="table-action" onClick={() => onPrintReceipt(receipt)}>Print</button>{!receipt.reversedAt && <button type="button" className="table-action danger" onClick={() => onReverseReceipt(receipt)}>Reverse</button>}</div></td>
-              </tr>)}</tbody>
-            </table></div></div>
-          )}
-        </div>
-      )}
-      {tab === "ledger" && (
-        <div className="customer-statement-print">
-          <div className="section-heading"><div><h2>Customer ledger statement</h2><p>Opening and closing balances are calculated from customer-linked AR postings.</p></div>
-            {statement && <PrintActions label="Print statement" beforePrint={() => {
-              document.body.classList.add("print-customer-statement");
-              return () => document.body.classList.remove("print-customer-statement");
-            }} />}
-          </div>
-          <form className="statement-filter" onSubmit={(event) => onStatementSubmit(event)}>
-            <FormField label="From"><input type="date" required value={statementDates.from} onChange={(event) => onStatementDatesChange({ ...statementDates, from: event.target.value })} /></FormField>
-            <FormField label="To"><input type="date" required value={statementDates.to} onChange={(event) => onStatementDatesChange({ ...statementDates, to: event.target.value })} /></FormField>
-            <button className="primary-button">Generate statement</button>
-          </form>
-          {statement ? <StatementTable
-            statement={statement}
-            partyLabel={`Customer: ${customer.name} (${customer.code})`}
-            partyDetails={`${customer.phone}${customer.address ? ` · ${customer.address}` : ""}`}
-          /> : <p className="muted-message">Choose a date range to generate the customer ledger.</p>}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function StatementTable({
-  statement,
-  partyLabel,
-  partyDetails,
-}: {
-  statement: SupplierStatement | CustomerStatement;
-  partyLabel: string;
-  partyDetails: string;
-}) {
-  return (
-    <div className="statement-panel statement-printable">
-      <header className="statement-document-heading">
-        <h2>{businessConfig.name}</h2>
-        <p>{businessConfig.contactInformation} · {businessConfig.address}</p>
-        <strong>{partyLabel}</strong>
-        {partyDetails && <span>{partyDetails}</span>}
-        <span>Statement period: {statement.from} to {statement.to}</span>
-      </header>
-      <div className="statement-balances">
-        <Metric label="Opening balance" value={formatMoney(statement.openingBalanceMinor)} />
-        <Metric label="Closing balance" value={formatMoney(statement.closingBalanceMinor)} />
-      </div>
-      {statement.lines.length === 0 ? <p className="muted-message">No postings in this date range.</p> : (
-        <div className="table-wrap">
-          <table>
-            <thead><tr><th>Date</th><th>Posting</th><th>Reference</th><th>Debit</th><th>Credit</th><th>Balance</th></tr></thead>
-            <tbody>{statement.lines.map((line, index) => <tr key={`${line.createdAt}-${index}`}>
-              <td>{formatDate(line.createdAt)}</td>
-              <td className="capitalize">{line.transactionType.replaceAll("_", " ")}</td>
-              <td>{line.reference}</td>
-              <td>{line.debitMinor ? formatMoney(line.debitMinor) : "—"}</td>
-              <td>{line.creditMinor ? formatMoney(line.creditMinor) : "—"}</td>
-              <td><strong>{formatMoney(line.balanceMinor)}</strong></td>
-            </tr>)}</tbody>
-          </table>
-        </div>
-      )}
-      <p className="print-authorized">{businessConfig.authorizedFooter}</p>
-    </div>
-  );
-}
-
-function StatusBadge({ active, low = false }: { active: boolean; low?: boolean }) {
-  return <span className={active ? low ? "status-badge low" : "status-badge active" : "status-badge inactive"}><span />{active ? low ? "Low stock" : "Active" : "Inactive"}</span>;
-}
-
-function InvoiceCard({ invoice, onPrint }: { invoice: Invoice; onPrint: (invoice: Invoice) => void }) {
-  return (
-    <article className="invoice-card">
-      <header><div><strong>{invoice.invoiceNumber}</strong><span>{formatDate(invoice.createdAt)}{invoice.customerName ? ` · ${invoice.customerCode} ${invoice.customerName}` : " · Walk-in customer"}</span></div><strong className="invoice-total">{formatMoney(invoice.totalMinor)}</strong></header>
-      <div className="invoice-lines">{invoice.items.map((item) => <div className="invoice-line" key={item.id}><span><strong>{item.sku}</strong> · {item.name}<small>{formatMeters(item.quantityMm)} × {formatMoney(item.unitPriceMinor)} / m</small></span><strong>{formatMoney(item.lineTotalMinor)}</strong></div>)}</div>
-      <footer className="invoice-summary">
-        <span>Subtotal <strong>{formatMoney(invoice.subtotalMinor)}</strong></span>
-        <span>Discount <strong>{formatMoney(invoice.discountMinor)}</strong></span>
-        <span>Received ({invoice.paymentAccount}) <strong>{formatMoney(invoice.amountReceivedMinor)}</strong></span>
-        <span>Credit balance <strong>{formatMoney(invoice.dueMinor)}</strong></span>
-      </footer>
-      <button className="table-action no-print" onClick={() => onPrint(invoice)}>Preview / print invoice</button>
-    </article>
-  );
-}
-
-function Metric({ label, value }: { label: string; value: string }) {
-  return <div className="metric"><span>{label}</span><strong>{value}</strong></div>;
-}
-
-function FormField({ label, required = false, hint, children }: { label: string; required?: boolean; hint?: string; children: React.ReactNode }) {
-  return <label className="form-field"><span>{label}{required && <b> *</b>}</span>{children}{hint && <small>{hint}</small>}</label>;
-}
-
-function Modal({ title, onClose, wide = false, children }: { title: string; onClose: () => void; wide?: boolean; children: React.ReactNode }) {
-  return (
-    <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
-      <section className={wide ? "modal wide" : "modal"} role="dialog" aria-modal="true" aria-label={title}>
-        <header className="modal-header"><h2>{title}</h2><button className="close-button" onClick={onClose} aria-label="Close dialog">×</button></header>
-        <div className="modal-content">{children}</div>
-      </section>
-    </div>
-  );
-}
-
-function EmptyState({ title, copy }: { title: string; copy: string }) {
-  return <div className="empty-state"><span className="empty-mark">▤</span><strong>{title}</strong><p>{copy}</p></div>;
 }
