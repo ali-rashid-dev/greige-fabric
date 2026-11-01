@@ -176,6 +176,10 @@ export const printDocumentSchema = z.object({
   paperFormat: z.enum(["A4", "A5", "Letter", "Legal"]),
 });
 
+export const shareWhatsAppSchema = z.object({
+  message: z.string().trim().min(1).max(20000),
+});
+
 export const analyticsReportSchema = z.object({
   reportType: z.enum([
     "daily_sales", "purchases", "stock_summary", "gross_profit", "profit_loss",
@@ -585,6 +589,7 @@ export type PurchaseReturnInput = z.infer<typeof purchaseReturnSchema>;
 export type ReturnReversalInput = z.infer<typeof returnReversalSchema>;
 export type ReturnDataInput = undefined;
 export type PrintDocumentInput = z.infer<typeof printDocumentSchema>;
+export type ShareWhatsAppInput = z.infer<typeof shareWhatsAppSchema>;
 export type AnalyticsReportInput = z.infer<typeof analyticsReportSchema>;
 export type SupplierInput = z.infer<typeof supplierInputSchema>;
 export type UpdateSupplierInput = z.infer<typeof updateSupplierSchema>;

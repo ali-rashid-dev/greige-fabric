@@ -40,6 +40,7 @@ import type {
   SupplierPurchaseInput,
   SupplierStatementInput,
   SupplierInput,
+  ShareWhatsAppInput,
   UpdateCustomerInput,
   UpdateFabricInput,
 } from "./contracts";
@@ -704,6 +705,7 @@ export interface DesktopApi {
   };
   documents: {
     print(input: PrintDocumentInput): Promise<IpcResult<{ printed: boolean }>>;
+    shareWhatsApp(input: ShareWhatsAppInput): Promise<IpcResult<{ opened: boolean }>>;
   };
   fabrics: {
     list(filters?: FabricFiltersInput): Promise<IpcResult<Fabric[]>>;

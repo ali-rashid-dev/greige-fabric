@@ -22,6 +22,7 @@ const api: DesktopApi = {
   },
   documents: {
     print: (input) => ipcRenderer.invoke(channels.printDocument, input),
+    shareWhatsApp: (input) => ipcRenderer.invoke(channels.shareWhatsApp, input),
   },
   fabrics: {
     list: (filters = {}) => ipcRenderer.invoke(channels.listFabrics, filters),

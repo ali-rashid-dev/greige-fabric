@@ -23,6 +23,7 @@ export const channels = {
   listInvoices: "invoices:list",
   createInvoice: "invoices:create",
   printDocument: "documents:print",
+  shareWhatsApp: "documents:share-whatsapp",
   listSuppliers: "suppliers:list",
   getSupplier: "suppliers:get",
   createSupplier: "suppliers:create",

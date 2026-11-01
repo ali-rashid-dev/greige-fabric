@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, shell } from "electron";
 import type { MessageBoxOptions } from "electron";
 import { z } from "zod";
 import {
@@ -32,6 +32,7 @@ import {
   partnerTransactionReversalSchema,
   analyticsReportSchema,
   printDocumentSchema,
+  shareWhatsAppSchema,
   customerInputSchema,
   customerListSchema,
   customerReceiptSchema,
@@ -271,6 +272,29 @@ export function registerIpcHandlers(
     } catch (error) {
       console.error("Document printing failed.", error);
       return failure("INTERNAL", "The document could not be printed.");
+    }
+  });
+
+  ipcMain.handle(channels.shareWhatsApp, async (event, rawInput): Promise<IpcResult<{ opened: boolean }>> => {
+    const frame = event.senderFrame;
+    if (
+      !frame ||
+      !isTrustedSender(frame.url, frame === event.sender.mainFrame, developmentUrl, productionFileUrl)
+    ) {
+      return failure("VALIDATION", "Untrusted application frame.");
+    }
+    const parsed = shareWhatsAppSchema.safeParse(rawInput);
+    if (!parsed.success) {
+      return failure("VALIDATION", parsed.error.issues[0]?.message ?? "Invalid WhatsApp share request.");
+    }
+    try {
+      const url = new URL("https://wa.me/");
+      url.searchParams.set("text", parsed.data.message);
+      await shell.openExternal(url.toString());
+      return { ok: true, data: { opened: true } };
+    } catch (error) {
+      console.error("Opening WhatsApp share failed.", error);
+      return failure("INTERNAL", "Unable to open WhatsApp.");
     }
   });
 

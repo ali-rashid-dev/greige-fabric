@@ -539,10 +539,7 @@ export default function PartnershipManagement() {
           <section className="panel">
             <header className="panel-heading partner-overview-heading">
               <div><h2>Partnership overview</h2><p>Manage partner and investor records and review their financial activity.</p></div>
-              <div className="partner-add-actions">
-                <button className="secondary-button" type="button" onClick={() => startPartnerForm("PARTNER")}>+ Add partner</button>
-                <button className="primary-button" type="button" onClick={() => startPartnerForm("INVESTOR")}>+ Add investor</button>
-              </div>
+              <button className="primary-button" type="button" onClick={() => startPartnerForm("PARTNER")}>+ Add partner or investor</button>
             </header>
           </section>
           <form className="expense-range" onSubmit={applyRange}>
@@ -603,10 +600,7 @@ export default function PartnershipManagement() {
               <div><h2>{profile ? profile.partner.fullName : collectionLabel}</h2><p>{profile ? `${profile.partner.code} · ${profile.partner.partnerType === "INVESTOR" ? "Investor" : "Partner"} · ${profile.partner.active ? "Active" : "Inactive"}` : `${totalPartners} ${partnerType === "all" ? "records" : partnerType === "INVESTOR" ? "investors" : "partners"} · deactivation preserves history`}</p></div>
               <div className="topbar-actions">
                 {profile && <button className="secondary-button" type="button" onClick={() => { setProfile(null); setPartnerForm(null); }}>All records</button>}
-                {!profile && <div className="partner-add-actions">
-                  <button className="secondary-button" type="button" onClick={() => startPartnerForm("PARTNER")}>+ Add partner</button>
-                  <button className="primary-button" type="button" onClick={() => startPartnerForm("INVESTOR")}>+ Add investor</button>
-                </div>}
+                {!profile && <button className="primary-button" type="button" onClick={() => startPartnerForm("PARTNER")}>+ Add partner or investor</button>}
               </div>
             </header>
             {profile ? (

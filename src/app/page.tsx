@@ -78,6 +78,10 @@ function getLocalDateInputValue(): string {
   return `${year}-${month}-${day}`;
 }
 
+function generateEntityCode(prefix: string): string {
+  return `${prefix}-${crypto.randomUUID().toUpperCase()}`;
+}
+
 function toFormValues(fabric: Fabric): FabricFormValues {
   return {
     sku: fabric.sku,
@@ -196,6 +200,8 @@ export default function Home() {
   });
   const [receiptPreview, setReceiptPreview] = useState<CustomerReceipt | null>(null);
   const [invoicePreview, setInvoicePreview] = useState<Invoice | null>(null);
+  const [sharingInvoice, setSharingInvoice] = useState(false);
+  const [invoiceShareError, setInvoiceShareError] = useState("");
   const [paymentAccounts, setPaymentAccounts] = useState<PaymentAccount[]>([]);
   const [customerStatement, setCustomerStatement] = useState<CustomerStatement | null>(null);
   const [customerStatementDates, setCustomerStatementDates] = useState({
@@ -294,7 +300,7 @@ export default function Home() {
   function openCreateForm() {
     setEditing(null);
     setFormOpen(true);
-    setFormValues(emptyFabric);
+    setFormValues({ ...emptyFabric, sku: generateEntityCode("GF") });
     setError("");
   }
 
@@ -483,7 +489,7 @@ export default function Home() {
       email: supplier.email,
       openingBalance: "",
     } : {
-      code: "",
+      code: generateEntityCode("SUP"),
       name: "",
       phone: "",
       address: "",
@@ -541,7 +547,7 @@ export default function Home() {
       creditLimit: String(customer.creditLimitMinor / 100),
       paymentTermsDays: String(customer.paymentTermsDays),
     } : {
-      code: "",
+      code: generateEntityCode("CUS"),
       name: "",
       phone: "",
       address: "",
@@ -585,6 +591,43 @@ export default function Home() {
       setError(saveError instanceof Error ? saveError.message : "Unable to save customer.");
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function shareInvoiceOnWhatsApp(invoice: Invoice) {
+    setSharingInvoice(true);
+    setInvoiceShareError("");
+    const message = [
+      businessConfig.name,
+      "Sales invoice preview",
+      `Invoice: ${invoice.invoiceNumber}`,
+      `Date: ${formatDate(invoice.createdAt)}`,
+      `Customer: ${invoice.customerName ?? "Walk-in customer"}`,
+      ...(invoice.customerPhone ? [`Phone: ${invoice.customerPhone}`] : []),
+      "",
+      "Items:",
+      ...invoice.items.map((item) =>
+        `${item.name} (${item.sku}) — ${formatMeters(item.quantityMm)} × ${formatMoney(item.unitPriceMinor)} / m = ${formatMoney(item.lineTotalMinor)}`,
+      ),
+      "",
+      `Subtotal: ${formatMoney(invoice.subtotalMinor)}`,
+      `Discount: ${formatMoney(invoice.discountMinor)}`,
+      `Total: ${formatMoney(invoice.totalMinor)}`,
+      `Received: ${formatMoney(invoice.amountReceivedMinor)}`,
+      `Balance due: ${formatMoney(invoice.dueMinor)}`,
+      invoice.paymentTermsDays
+        ? `Payment terms: ${invoice.paymentTermsDays} days`
+        : "Payment terms: Due on receipt",
+      "",
+      "Thank you for your business.",
+    ].join("\n");
+    try {
+      const result = await getDesktopApi().documents.shareWhatsApp({ message });
+      if (!result.ok) throw new Error(result.error.message);
+    } catch (shareError) {
+      setInvoiceShareError(shareError instanceof Error ? shareError.message : "Unable to open WhatsApp.");
+    } finally {
+      setSharingInvoice(false);
     }
   }
 
@@ -1085,8 +1128,8 @@ export default function Home() {
           {error && <div className="error-banner modal-error" role="alert">{error}</div>}
           <form className="fabric-form" onSubmit={(event) => void saveFabric(event)}>
             <div className="form-grid">
-              <FormField label="SKU" required hint="Unique product code, e.g. GF-0001">
-                <input required autoFocus value={formValues.sku} onChange={(event) => setFormValues({ ...formValues, sku: event.target.value })} placeholder="GF-0001" maxLength={40} />
+              <FormField label="SKU" required hint="Generated automatically; you can edit it.">
+                <input required autoFocus value={formValues.sku} onChange={(event) => setFormValues({ ...formValues, sku: event.target.value })} maxLength={40} />
               </FormField>
               <FormField label="Fabric name" required>
                 <input required value={formValues.name} onChange={(event) => setFormValues({ ...formValues, name: event.target.value })} placeholder="Greige Cotton Fabric" maxLength={120} />
@@ -1161,6 +1204,7 @@ export default function Home() {
 
       {invoicePreview && (
         <Modal title="Sales invoice preview" onClose={() => setInvoicePreview(null)} wide>
+          {invoiceShareError && <div className="error-banner modal-error" role="alert">{invoiceShareError}</div>}
           <article className="invoice-printable">
             <header className="print-invoice-heading">
               <div><p>{businessConfig.name}</p><small>{businessConfig.contactInformation} · {businessConfig.address}</small><h2>Sales invoice</h2></div>
@@ -1191,7 +1235,13 @@ export default function Home() {
             <p className="print-thank-you">Thank you for your business.</p>
             <p className="print-authorized">{businessConfig.authorizedFooter}</p>
           </article>
-          <div className="modal-actions no-print"><button className="secondary-button" onClick={() => setInvoicePreview(null)}>Close</button><PrintActions label="Print invoice" /></div>
+          <div className="modal-actions no-print">
+            <button className="secondary-button" onClick={() => setInvoicePreview(null)}>Close</button>
+            <button type="button" className="secondary-button" disabled={sharingInvoice} onClick={() => void shareInvoiceOnWhatsApp(invoicePreview)}>
+              {sharingInvoice ? "Opening WhatsApp…" : "Share on WhatsApp"}
+            </button>
+            <PrintActions label="Print invoice" />
+          </div>
         </Modal>
       )}
 
@@ -1235,7 +1285,7 @@ export default function Home() {
           {error && <div className="error-banner modal-error" role="alert">{error}</div>}
           <form className="adjustment-form" onSubmit={(event) => void saveCustomer(event)}>
             <div className="form-grid">
-              <FormField label="Customer code" required><input required autoFocus maxLength={40} value={customerValues.code} onChange={(event) => setCustomerValues({ ...customerValues, code: event.target.value })} placeholder="CUS-0001" /></FormField>
+              <FormField label="Customer code" required hint="Generated automatically; you can edit it."><input required autoFocus maxLength={40} value={customerValues.code} onChange={(event) => setCustomerValues({ ...customerValues, code: event.target.value })} /></FormField>
               <FormField label="Customer name" required><input required maxLength={120} value={customerValues.name} onChange={(event) => setCustomerValues({ ...customerValues, name: event.target.value })} placeholder="Customer name" /></FormField>
               <FormField label="Phone"><input maxLength={40} value={customerValues.phone} onChange={(event) => setCustomerValues({ ...customerValues, phone: event.target.value })} /></FormField>
               <FormField label="Address"><input maxLength={240} value={customerValues.address} onChange={(event) => setCustomerValues({ ...customerValues, address: event.target.value })} /></FormField>
@@ -1348,7 +1398,7 @@ export default function Home() {
           {error && <div className="error-banner modal-error" role="alert">{error}</div>}
           <form className="fabric-form" onSubmit={(event) => void saveSupplier(event)}>
             <div className="form-grid">
-              <FormField label="Supplier code" required><input required maxLength={40} value={supplierValues.code} onChange={(event) => setSupplierValues({ ...supplierValues, code: event.target.value })} /></FormField>
+              <FormField label="Supplier code" required hint="Generated automatically; you can edit it."><input required maxLength={40} value={supplierValues.code} onChange={(event) => setSupplierValues({ ...supplierValues, code: event.target.value })} /></FormField>
               <FormField label="Supplier name" required><input required maxLength={120} value={supplierValues.name} onChange={(event) => setSupplierValues({ ...supplierValues, name: event.target.value })} /></FormField>
               <FormField label="Phone" required><input required maxLength={40} value={supplierValues.phone} onChange={(event) => setSupplierValues({ ...supplierValues, phone: event.target.value })} /></FormField>
               <FormField label="Contact person"><input maxLength={120} value={supplierValues.contactName} onChange={(event) => setSupplierValues({ ...supplierValues, contactName: event.target.value })} /></FormField>
