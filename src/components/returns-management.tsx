@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { businessConfig } from "@/config/business";
 import { getDesktopApi } from "@/lib/desktop-api";
 import type { IpcResult } from "@/shared/contracts";
@@ -36,7 +36,7 @@ export default function ReturnsManagement() {
   const [reason, setReason] = useState("");
   const [reversing, setReversing] = useState<ReturnRecord | null>(null);
   const [reversalReason, setReversalReason] = useState("");
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -163,25 +163,17 @@ export default function ReturnsManagement() {
     }
   }
 
+  useEffect(() => {
+    void loadData();
+  }, []);
+
   const chosenSaleHasCustomer = Boolean(selectedInvoice?.customerId);
 
   return (
     <div className="returns-page">
-      <section className="panel">
-        <header className="panel-heading">
-          <div><h2>Returns, corrections & audit</h2><p>Review and record sales or purchase returns, corrections, and audit history.</p></div>
-        </header>
-        <form className="expense-form" onSubmit={(event) => {
-          event.preventDefault();
-          void loadData();
-        }}>
-          <button className="secondary-button" disabled={loading}>
-            {loading ? "Loading…" : "Load returns & audit"}
-          </button>
-        </form>
-        {error && <div className="error-banner" role="alert">{error}</div>}
-        {notice && <div className="notice" role="status">{notice}</div>}
-      </section>
+      {loading && !data && <p className="empty-state" role="status">Loading returns &amp; audit…</p>}
+      {error && <div className="error-banner" role="alert">{error}</div>}
+      {notice && <div className="notice" role="status">{notice}</div>}
 
       {data && (
         <>
