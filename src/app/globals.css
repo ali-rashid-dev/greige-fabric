@@ -758,30 +758,36 @@ button:disabled {
 
 .search-field {
   display: flex;
-  width: min(100%, 400px);
-  height: 38px;
+  width: min(100%, 460px);
+  min-width: 0;
+  min-height: 42px;
   align-items: center;
-  gap: 9px;
-  padding: 0 12px;
+  gap: 10px;
+  padding: 0 10px 0 13px;
   border: 1.5px solid #dde3db;
-  border-radius: 8px;
+  border-radius: 10px;
   background: white;
-  color: #8fa696;
-  box-shadow: 0 1px 3px rgb(30 41 34 / 5%);
-  transition: border-color 150ms ease, box-shadow 150ms ease;
+  color: #77887c;
+  box-shadow: 0 1px 2px rgb(30 41 34 / 4%);
+  transition: border-color 150ms ease, box-shadow 150ms ease, background 150ms ease;
+}
+
+.search-field:hover {
+  border-color: #c3d1c5;
 }
 
 .search-field:focus-within {
   border-color: var(--green);
-  box-shadow: 0 0 0 3px rgb(74 122 96 / 12%), 0 1px 3px rgb(30 41 34 / 5%);
+  outline: 0;
+  box-shadow: 0 0 0 3px rgb(74 122 96 / 14%), 0 1px 3px rgb(30 41 34 / 5%);
   color: var(--green);
 }
 
 .search-field > svg {
-  width: 15px;
-  height: 15px;
+  width: 16px;
+  height: 16px;
   flex-shrink: 0;
-  opacity: 0.7;
+  opacity: 0.85;
 }
 
 .search-field > span {
@@ -796,6 +802,7 @@ button:disabled {
 .search-field input {
   width: 100%;
   min-width: 0;
+  min-height: 38px;
   border: 0;
   outline: 0;
   background: transparent;
@@ -804,8 +811,32 @@ button:disabled {
 }
 
 .search-field input::placeholder {
-  color: #aab4ac;
+  color: #929e95;
   font-weight: 400;
+}
+
+.search-field-clear {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  flex: 0 0 28px;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: #7d8981;
+  transition: background 120ms ease, color 120ms ease;
+}
+
+.search-field-clear:hover {
+  background: #eef3ef;
+  color: var(--green-dark);
+}
+
+.search-field-clear:focus-visible {
+  outline: 2px solid var(--green);
+  outline-offset: 1px;
 }
 
 .panel-toolbar select,
@@ -3653,6 +3684,17 @@ td {
   flex-wrap: wrap;
 }
 
+.partner-add-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.partnership-page .panel > header.panel-heading.partner-overview-heading {
+  align-items: center;
+}
+
 .partner-list-toolbar .search-field {
   flex: 1 1 280px;
 }
@@ -4042,6 +4084,14 @@ td {
   .partnership-page .panel > header.panel-heading {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .partner-add-actions {
+    width: 100%;
+  }
+
+  .partner-add-actions > button {
+    flex: 1 1 auto;
   }
 }
 

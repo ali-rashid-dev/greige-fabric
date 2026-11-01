@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { FormEvent } from "react";
-import { Search } from "lucide-react";
+import { Search, X } from "lucide-react";
 import { businessConfig } from "@/config/business";
 import { getDesktopApi } from "@/lib/desktop-api";
 import { fabricInputSchema } from "@/shared/contracts";
@@ -929,10 +929,11 @@ export default function Home() {
               </div>
               <div className="panel">
                 <div className="panel-toolbar">
-                  <label className="search-field">
+                  <div className="search-field">
                     <Search size={15} aria-hidden="true" />
                     <Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search SKU, name, construction…" aria-label="Search fabrics" />
-                  </label>
+                    {search && <button className="search-field-clear" type="button" aria-label="Clear fabric search" onClick={() => setSearch("")}><X size={15} aria-hidden="true" /></button>}
+                  </div>
                   <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as StatusFilter)} aria-label="Filter fabric status">
                     <option value="active">Active fabrics</option>
                     <option value="all">All fabrics</option>
@@ -1002,7 +1003,7 @@ export default function Home() {
               {apReconciliation && apReconciliation.differenceMinor !== 0 && <div className="error-banner" role="alert">Supplier subledger differs from the Accounts Payable control account by {formatMoney(apReconciliation.differenceMinor)}.</div>}
               <div className="panel">
                 <div className="panel-toolbar">
-                  <label className="search-field"><Search size={15} aria-hidden="true" /><Input value={supplierSearch} onChange={(event) => setSupplierSearch(event.target.value)} placeholder="Search supplier code, name, phone…" aria-label="Search suppliers" /></label>
+                  <div className="search-field"><Search size={15} aria-hidden="true" /><Input value={supplierSearch} onChange={(event) => setSupplierSearch(event.target.value)} placeholder="Search supplier code, name, phone…" aria-label="Search suppliers" />{supplierSearch && <button className="search-field-clear" type="button" aria-label="Clear supplier search" onClick={() => setSupplierSearch("")}><X size={15} aria-hidden="true" /></button>}</div>
                   <span className="history-count">{suppliers.length} suppliers</span>
                 </div>
                 <SupplierTable suppliers={suppliers} onOpen={(supplier) => void openSupplier(supplier)} />
@@ -1048,10 +1049,11 @@ export default function Home() {
                 </div>
                 <div className="panel">
                   <div className="panel-toolbar">
-                    <label className="search-field">
+                    <div className="search-field">
                       <Search size={15} aria-hidden="true" />
                       <Input value={customerSearch} onChange={(event) => setCustomerSearch(event.target.value)} placeholder="Search customer code, name, phone…" aria-label="Search customers" />
-                    </label>
+                      {customerSearch && <button className="search-field-clear" type="button" aria-label="Clear customer search" onClick={() => setCustomerSearch("")}><X size={15} aria-hidden="true" /></button>}
+                    </div>
                     <span className="history-count">{customers.length} customers</span>
                   </div>
                   <CustomerTable customers={visibleCustomers} onOpen={(customer) => void openCustomer(customer)} />

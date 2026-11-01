@@ -22,7 +22,7 @@ import type {
   PaymentAccount,
 } from "@/shared/types";
 import PrintActions from "./print-actions";
-import { Search } from "lucide-react";
+import { Search, X } from "lucide-react";
 
 type View = "overview" | "partners" | "transactions" | "allocation" | "statements";
 type PartnerForm = {
@@ -335,6 +335,19 @@ export default function PartnershipManagement() {
     setRange(rangeInput);
   }
 
+  function startPartnerForm(type: PartnerForm["partnerType"]) {
+    const values: PartnerForm = {
+      ...EMPTY_PARTNER_FORM,
+      partnerType: type,
+      joiningDate: localDate(),
+      agreementStartDate: localDate(),
+    };
+    resetPartner(values);
+    setProfile(null);
+    setPartnerForm(values);
+    setView("partners");
+  }
+
   async function savePartner(values: PartnerForm) {
     if (!partnerForm) return;
     setSaving(true);
@@ -507,9 +520,6 @@ export default function PartnershipManagement() {
     : partnerType === "PARTNER"
       ? "Partners"
       : "Partners & investors";
-  const newPartnerType = partnerType === "INVESTOR" ? "INVESTOR" : "PARTNER";
-  const addLabel = partnerType === "all" ? "Add partner or investor" : `Add ${newPartnerType === "INVESTOR" ? "investor" : "partner"}`;
-
   return (
     <div className="partnership-page">
       <nav className="expense-tabs" aria-label="Partnership sections">
@@ -526,6 +536,15 @@ export default function PartnershipManagement() {
 
       {view === "overview" && (
         <>
+          <section className="panel">
+            <header className="panel-heading partner-overview-heading">
+              <div><h2>Partnership overview</h2><p>Manage partner and investor records and review their financial activity.</p></div>
+              <div className="partner-add-actions">
+                <button className="secondary-button" type="button" onClick={() => startPartnerForm("PARTNER")}>+ Add partner</button>
+                <button className="primary-button" type="button" onClick={() => startPartnerForm("INVESTOR")}>+ Add investor</button>
+              </div>
+            </header>
+          </section>
           <form className="expense-range" onSubmit={applyRange}>
             <label>From <input type="date" value={rangeInput.from} onChange={(event) => setRangeInput({ ...rangeInput, from: event.target.value })} /></label>
             <label>To <input type="date" value={rangeInput.to} onChange={(event) => setRangeInput({ ...rangeInput, to: event.target.value })} /></label>
@@ -584,11 +603,10 @@ export default function PartnershipManagement() {
               <div><h2>{profile ? profile.partner.fullName : collectionLabel}</h2><p>{profile ? `${profile.partner.code} · ${profile.partner.partnerType === "INVESTOR" ? "Investor" : "Partner"} · ${profile.partner.active ? "Active" : "Inactive"}` : `${totalPartners} ${partnerType === "all" ? "records" : partnerType === "INVESTOR" ? "investors" : "partners"} · deactivation preserves history`}</p></div>
               <div className="topbar-actions">
                 {profile && <button className="secondary-button" type="button" onClick={() => { setProfile(null); setPartnerForm(null); }}>All records</button>}
-                {!profile && <button className="primary-button" type="button" onClick={() => {
-                  const values: PartnerForm = { ...EMPTY_PARTNER_FORM, partnerType: newPartnerType, joiningDate: localDate(), agreementStartDate: localDate() };
-                  resetPartner(values);
-                  setPartnerForm(values);
-                }}>+ {addLabel}</button>}
+                {!profile && <div className="partner-add-actions">
+                  <button className="secondary-button" type="button" onClick={() => startPartnerForm("PARTNER")}>+ Add partner</button>
+                  <button className="primary-button" type="button" onClick={() => startPartnerForm("INVESTOR")}>+ Add investor</button>
+                </div>}
               </div>
             </header>
             {profile ? (
@@ -627,7 +645,7 @@ export default function PartnershipManagement() {
             ) : (
               <>
                 <div className="panel-toolbar partner-list-toolbar">
-                  <label className="search-field"><Search size={15} aria-hidden="true" /><input aria-label="Search partners" placeholder="Search name, code, phone, or email" value={query} onChange={(event) => { setQuery(event.target.value); setPage(1); }} /></label>
+                  <div className="search-field"><Search size={15} aria-hidden="true" /><input aria-label="Search partners" placeholder="Search name, code, phone, or email" value={query} onChange={(event) => { setQuery(event.target.value); setPage(1); }} />{query && <button className="search-field-clear" type="button" aria-label="Clear partner search" onClick={() => { setQuery(""); setPage(1); }}><X size={15} aria-hidden="true" /></button>}</div>
                   <select aria-label="Filter partner status" value={status} onChange={(event) => { setStatus(event.target.value as typeof status); setPage(1); }}><option value="active">Active</option><option value="inactive">Inactive</option><option value="all">All statuses</option></select>
                   <select aria-label="Filter partner type" value={partnerType} onChange={(event) => { setPartnerType(event.target.value as typeof partnerType); setPage(1); }}><option value="all">All types</option><option value="PARTNER">Partners</option><option value="INVESTOR">Investors</option></select>
                   <select aria-label="Sort partners" value={`${sortBy}:${sortDirection}`} onChange={(event) => { const [field, direction] = event.target.value.split(":"); setSortBy(field as typeof sortBy); setSortDirection(direction as typeof sortDirection); }}><option value="name:asc">Name A–Z</option><option value="name:desc">Name Z–A</option><option value="code:asc">Code A–Z</option><option value="joiningDate:desc">Newest first</option><option value="joiningDate:asc">Oldest first</option></select>
