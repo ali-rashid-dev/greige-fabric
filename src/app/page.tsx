@@ -927,7 +927,7 @@ export default function Home() {
           {section === "stock" && (
             <div className="topbar-actions">
               <button className="primary-button" onClick={() => {
-                setOpeningValues({ fabricId: "", supplierId: "", quantityMeters: "", unitCost: "", reference: generateEntityCode("OPEN"), reason: "" });
+                setOpeningValues({ fabricId: "", supplierId: "", quantityMeters: "", unitCost: "", reference: generateEntityCode("SUP-INV"), reason: "" });
                 setOpeningReason("");
                 setOpeningStockOpen(true);
               }}><span>+</span> Opening stock</button>
@@ -1074,7 +1074,7 @@ export default function Home() {
                     amount: "",
                     accountCode: paymentAccounts[0]?.code ?? "1000",
                     invoiceId: "",
-                    reference: "",
+                    reference: generateEntityCode("REC"),
                     note: "",
                   });
                   setReceiptOpen(true);
@@ -1399,7 +1399,7 @@ export default function Home() {
             </FormField>
             <FormField label="Quantity" required><div className="input-suffix"><input required type="number" min="0.001" step="0.001" value={openingValues.quantityMeters} onChange={(event) => setOpeningValues({ ...openingValues, quantityMeters: event.target.value })} /><span>m</span></div></FormField>
             <FormField label="Purchase cost" required><div className="input-prefix"><span>PKR</span><input required type="number" min="0" step="0.01" value={openingValues.unitCost} onChange={(event) => setOpeningValues({ ...openingValues, unitCost: event.target.value })} /></div></FormField>
-            <FormField label="Reference" required><input required maxLength={100} value={openingValues.reference} onChange={(event) => setOpeningValues({ ...openingValues, reference: event.target.value })} placeholder="Opening stock entry" /></FormField>
+            <FormField label="Supplier invoice / reference" required><input required maxLength={100} value={openingValues.reference} onChange={(event) => setOpeningValues({ ...openingValues, reference: event.target.value })} placeholder="Supplier invoice number" /></FormField>
             <FormField label="Reason" required>
               <select required value={openingReason} onChange={(event) => {
                 const reason = event.target.value;
@@ -1453,7 +1453,7 @@ export default function Home() {
             <button className="secondary-button" onClick={() => {
               setPurchaseValues({
                 billNumber: "",
-                reference: "",
+                reference: generateEntityCode("SUP-REF"),
                 purchaseDate: getLocalDateInputValue(),
                 additionalCosts: "",
                 additionalCostsDescription: "",
@@ -1465,7 +1465,7 @@ export default function Home() {
               setPurchaseOpen(true);
             }}>Receive purchase</button>
             <button className="secondary-button" onClick={() => {
-              setPaymentValues({ amount: "", accountCode: paymentAccounts[0]?.code ?? "1000", reference: "", note: "", purchaseId: "" });
+              setPaymentValues({ amount: "", accountCode: paymentAccounts[0]?.code ?? "1000", reference: generateEntityCode("SUP-PAY"), note: "", purchaseId: "" });
               setPaymentOpen(true);
             }}>Record payment</button>
             <button className="secondary-button" onClick={() => setSupplierAdjustmentOpen(true)}>Adjust balance</button>

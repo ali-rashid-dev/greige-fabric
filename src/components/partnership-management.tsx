@@ -81,6 +81,10 @@ function monthStart(): string {
   return `${localDate().slice(0, 7)}-01`;
 }
 
+function generateReferenceCode(prefix: string): string {
+  return `${prefix}-${crypto.randomUUID().slice(0, 8).toUpperCase()}`;
+}
+
 function formatMoney(minor: number): string {
   return `${businessConfig.currency} ${new Intl.NumberFormat("en-PK", {
     minimumFractionDigits: 2,
@@ -685,7 +689,10 @@ export default function PartnershipManagement() {
 
       {view === "transactions" && (
         <section className="panel">
-          <header className="panel-heading"><div><h2>Capital, loans, withdrawals & distributions</h2><p>Every posting moves cash/bank and a partner ledger balance in one database transaction.</p></div><button className="primary-button" type="button" onClick={() => setTransactionFormOpen((open) => !open)}>+ Record transaction</button></header>
+          <header className="panel-heading"><div><h2>Capital, loans, withdrawals & distributions</h2><p>Every posting moves cash/bank and a partner ledger balance in one database transaction.</p></div><button className="primary-button" type="button" onClick={() => {
+            if (!transactionFormOpen) setTransactionValue("reference", generateReferenceCode("PART"));
+            setTransactionFormOpen(!transactionFormOpen);
+          }}>+ Record transaction</button></header>
           {transactionFormOpen && (
             <form className="expense-form partner-transaction-form" onSubmit={handleTransactionSubmit((values) => void postTransaction(values))}>
               <label>Partner<select required {...registerTransaction("partnerId", { onChange: (event) => {

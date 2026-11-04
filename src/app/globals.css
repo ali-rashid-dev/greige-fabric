@@ -1798,15 +1798,11 @@ td {
 }
 
 .pos-search-results {
-  position: absolute;
-  top: calc(100% + 5px);
-  right: 0;
-  left: 0;
-  overflow: hidden;
+  max-height: 320px;
+  overflow: auto;
   border: 1px solid #e3e9e3;
   border-radius: 7px;
   background: white;
-  box-shadow: 0 12px 30px rgb(32 45 35 / 12%);
 }
 
 .pos-result {

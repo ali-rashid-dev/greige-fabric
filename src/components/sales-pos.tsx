@@ -110,7 +110,7 @@ export default function SalesPos({ customers, onPosted }: SalesPosProps) {
   const totalMinor = Math.max(0, subtotalMinor - discountMinor);
   const receivedMinor = Number.isFinite(Number(receivedAmount)) ? Math.round(Number(receivedAmount) * 100) : 0;
   const dueMinor = totalMinor - receivedMinor;
-  const results = products.slice(0, 8);
+  const results = products.filter((fabric) => fabric.stockMm > 0);
 
   function addProduct(fabric: Fabric) {
     setError("");
@@ -253,7 +253,7 @@ export default function SalesPos({ customers, onPosted }: SalesPosProps) {
                 onKeyDown={(event) => {
                   if (event.key === "ArrowDown") {
                     event.preventDefault();
-                    setHighlighted((index) => Math.min(index + 1, results.length - 1));
+                    setHighlighted((index) => Math.min(index + 1, Math.max(results.length - 1, 0)));
                   } else if (event.key === "ArrowUp") {
                     event.preventDefault();
                     setHighlighted((index) => Math.max(index - 1, 0));
@@ -268,36 +268,33 @@ export default function SalesPos({ customers, onPosted }: SalesPosProps) {
                 aria-label="Search fabric by SKU or quality"
                 aria-controls="pos-search-results"
                 aria-autocomplete="list"
-                aria-expanded={query.trim().length > 0}
+                aria-expanded="true"
               />
               <kbd>/</kbd>
             </label>
-            {query.trim() && (
-              <div className="pos-search-results" id="pos-search-results" role="listbox" aria-label="Fabric search results">
-                {searching ? <p className="pos-search-message">Searching catalog…</p> : results.length === 0 ? (
-                  <p className="pos-search-message">No active fabrics match that search.</p>
-                ) : results.map((fabric, index) => (
-                  <button
-                    type="button"
-                    role="option"
-                    aria-selected={highlighted === index}
-                    className={highlighted === index ? "pos-result highlighted" : "pos-result"}
-                    key={fabric.id}
-                    onMouseEnter={() => setHighlighted(index)}
-                    onClick={() => addProduct(fabric)}
-                    disabled={fabric.stockMm <= 0}
-                  >
-                    <span className="pos-result-symbol">▤</span>
-                    <span className="pos-result-name">
-                      <strong>{fabric.name}</strong>
-                      <small>{fabric.sku} · {fabric.construction} · {formatMeters(fabric.stockMm)} available</small>
-                    </span>
-                    <strong className="pos-result-rate">{formatMoney(fabric.sellingRateMinor)}<small> / m</small></strong>
-                  </button>
-                ))}
-                <p className="pos-search-hint">↑ ↓ to choose · Enter to add</p>
-              </div>
-            )}
+            <div className="pos-search-results" id="pos-search-results" role="listbox" aria-label={query.trim() ? "Fabric search results" : "In-stock fabrics"}>
+              {searching ? <p className="pos-search-message">Loading in-stock fabrics…</p> : results.length === 0 ? (
+                <p className="pos-search-message">{query.trim() ? "No in-stock fabrics match that search." : "No active fabrics are currently in stock."}</p>
+              ) : results.map((fabric, index) => (
+                <button
+                  type="button"
+                  role="option"
+                  aria-selected={highlighted === index}
+                  className={highlighted === index ? "pos-result highlighted" : "pos-result"}
+                  key={fabric.id}
+                  onMouseEnter={() => setHighlighted(index)}
+                  onClick={() => addProduct(fabric)}
+                >
+                  <span className="pos-result-symbol">▤</span>
+                  <span className="pos-result-name">
+                    <strong>{fabric.name}</strong>
+                    <small>{fabric.sku} · {fabric.construction} · {formatMeters(fabric.stockMm)} available</small>
+                  </span>
+                  <strong className="pos-result-rate">{formatMoney(fabric.sellingRateMinor)}<small> / m</small></strong>
+                </button>
+              ))}
+              {results.length > 0 && <p className="pos-search-hint">↑ ↓ to choose · Enter to add</p>}
+            </div>
           </div>
 
           <div className="pos-cart">
