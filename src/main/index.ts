@@ -15,6 +15,8 @@ import { ReturnsService } from "./services/returns";
 import { BackupService } from "./services/backups";
 
 const developmentUrl = app.isPackaged ? undefined : process.env.DESKTOP_DEV_URL;
+if (process.platform === "win32") app.setAppUserModelId("com.greigefabric.pos");
+
 let mainWindow: BrowserWindow | null = null;
 let database: Awaited<ReturnType<typeof openDatabase>> | null = null;
 let backupTimer: NodeJS.Timeout | null = null;
