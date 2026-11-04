@@ -61,7 +61,8 @@
     "files": [
       "dist-electron/**/*",
       "out/**/*",
-      "package.json"
+      "package.json",
+      "build/icon.png"
     ],
     "extraResources": [
       {
@@ -73,6 +74,7 @@
       }
     ],
     "win": {
+      "icon": "build/icon.png",
       "target": [
         {
           "target": "nsis",
@@ -91,12 +93,14 @@
       "createStartMenuShortcut": true
     },
     "mac": {
+      "icon": "build/icon.png",
       "target": [
         "dmg"
       ],
       "category": "public.app-category.productivity"
     },
     "linux": {
+      "icon": "build/icon.png",
       "target": [
         "AppImage",
         "deb"

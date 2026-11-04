@@ -68,6 +68,7 @@ async function createMainWindow(): Promise<void> {
     height: 820,
     minWidth: 780,
     minHeight: 600,
+    icon: path.join(app.getAppPath(), "build/icon.png"),
     title: "Greige Fabric POS",
     backgroundColor: "#f7f7f5",
     webPreferences: {
