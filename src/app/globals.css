@@ -932,6 +932,51 @@ td {
   color: var(--green);
 }
 
+.party-table tbody tr {
+  transition: background-color 140ms ease;
+}
+
+.party-table tbody tr:hover {
+  background: #f8faf8;
+}
+
+.party-table .fabric-link:focus-visible {
+  border-radius: 4px;
+  outline: 2px solid var(--green);
+  outline-offset: 3px;
+}
+
+.party-contact {
+  color: #48584d;
+  font-size: 11px;
+  font-weight: 550;
+}
+
+.party-secondary {
+  display: block;
+  margin-top: 3px;
+  color: #8d9990;
+  font-size: 9px;
+}
+
+.party-balance {
+  font-size: 11px;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+}
+
+.party-balance.due {
+  color: #9a5d43;
+}
+
+.party-balance.clear {
+  color: #4d7957;
+}
+
+.party-balance.credit {
+  color: #536f91;
+}
+
 .rate-cell {
   color: #3d5f48;
   font-weight: 650;

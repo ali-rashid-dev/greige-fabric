@@ -39,6 +39,7 @@ function lineTotal(line: CartLine): number {
 
 export default function SalesPos({ customers, onPosted }: SalesPosProps) {
   const searchInput = useRef<HTMLInputElement>(null);
+  const resultsList = useRef<HTMLDivElement>(null);
   const [query, setQuery] = useState("");
   const [products, setProducts] = useState<Fabric[]>([]);
   const [searching, setSearching] = useState(false);
@@ -111,6 +112,11 @@ export default function SalesPos({ customers, onPosted }: SalesPosProps) {
   const receivedMinor = Number.isFinite(Number(receivedAmount)) ? Math.round(Number(receivedAmount) * 100) : 0;
   const dueMinor = totalMinor - receivedMinor;
   const results = products.filter((fabric) => fabric.stockMm > 0);
+
+  useEffect(() => {
+    const selected = resultsList.current?.querySelector<HTMLElement>('[aria-selected="true"]');
+    selected?.scrollIntoView?.({ block: "nearest" });
+  }, [highlighted]);
 
   function addProduct(fabric: Fabric) {
     setError("");
@@ -272,7 +278,7 @@ export default function SalesPos({ customers, onPosted }: SalesPosProps) {
               />
               <kbd>/</kbd>
             </label>
-            <div className="pos-search-results" id="pos-search-results" role="listbox" aria-label={query.trim() ? "Fabric search results" : "In-stock fabrics"}>
+            <div ref={resultsList} className="pos-search-results" id="pos-search-results" role="listbox" aria-label={query.trim() ? "Fabric search results" : "In-stock fabrics"}>
               {searching ? <p className="pos-search-message">Loading in-stock fabrics…</p> : results.length === 0 ? (
                 <p className="pos-search-message">{query.trim() ? "No in-stock fabrics match that search." : "No active fabrics are currently in stock."}</p>
               ) : results.map((fabric, index) => (

@@ -259,7 +259,7 @@ export default function Home() {
     const [reportResult, movementResult, supplierResult, reconciliationResult, customerResult, accountResult] = await Promise.all([
       getDesktopApi().inventory.report(),
       getDesktopApi().inventory.movements(),
-      getDesktopApi().suppliers.list({ query: supplierSearch, includeInactive: true }),
+      getDesktopApi().suppliers.list({ query: "", includeInactive: true }),
       getDesktopApi().suppliers.reconcile(),
       getDesktopApi().customers.list({ query: "", includeInactive: true }),
       getDesktopApi().customers.paymentAccounts(),
@@ -293,6 +293,16 @@ export default function Home() {
       ),
     );
   }, [customers, customerSearch]);
+
+  const visibleSuppliers = useMemo(() => {
+    const query = supplierSearch.trim().toLocaleLowerCase();
+    if (!query) return suppliers;
+    return suppliers.filter((supplier) =>
+      [supplier.code, supplier.name, supplier.phone].some((value) =>
+        value.toLocaleLowerCase().includes(query),
+      ),
+    );
+  }, [suppliers, supplierSearch]);
 
   async function handleSalePosted(invoice: Invoice) {
     setInvoices((current) => [invoice, ...current.filter((item) => item.id !== invoice.id)]);
@@ -1052,9 +1062,9 @@ export default function Home() {
               <div className="panel">
                 <div className="panel-toolbar">
                   <div className="search-field"><Search size={15} aria-hidden="true" /><Input value={supplierSearch} onChange={(event) => setSupplierSearch(event.target.value)} placeholder="Search supplier code, name, phone…" aria-label="Search suppliers" />{supplierSearch && <button className="search-field-clear" type="button" aria-label="Clear supplier search" onClick={() => setSupplierSearch("")}><X size={15} aria-hidden="true" /></button>}</div>
-                  <span className="history-count">{suppliers.length} suppliers</span>
+                  <span className="history-count">{visibleSuppliers.length === suppliers.length ? `${suppliers.length} suppliers` : `${visibleSuppliers.length} of ${suppliers.length} suppliers`}</span>
                 </div>
-                <SupplierTable suppliers={suppliers} onOpen={(supplier) => void openSupplier(supplier)} />
+                <SupplierTable suppliers={visibleSuppliers} onOpen={(supplier) => void openSupplier(supplier)} />
               </div>
             </>
           )}
@@ -1102,7 +1112,7 @@ export default function Home() {
                       <Input value={customerSearch} onChange={(event) => setCustomerSearch(event.target.value)} placeholder="Search customer code, name, phone…" aria-label="Search customers" />
                       {customerSearch && <button className="search-field-clear" type="button" aria-label="Clear customer search" onClick={() => setCustomerSearch("")}><X size={15} aria-hidden="true" /></button>}
                     </div>
-                    <span className="history-count">{customers.length} customers</span>
+                    <span className="history-count">{visibleCustomers.length === customers.length ? `${customers.length} customers` : `${visibleCustomers.length} of ${customers.length} customers`}</span>
                   </div>
                   <CustomerTable customers={visibleCustomers} onOpen={(customer) => void openCustomer(customer)} />
                 </div>

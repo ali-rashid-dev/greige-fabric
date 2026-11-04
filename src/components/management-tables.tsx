@@ -98,15 +98,15 @@ export function ValuationTable({ report }: { report: InventoryReport | null }) {
 export function SupplierTable({ suppliers, onOpen }: { suppliers: Supplier[]; onOpen: (supplier: Supplier) => void }) {
   if (suppliers.length === 0) return <EmptyState title="No suppliers found" copy="Add a fabric supplier to track purchases and outstanding balances." />;
   return (
-    <div className="table-wrap">
+    <div className="table-wrap party-table">
       <table>
         <thead><tr><th>Supplier</th><th>Phone / contact</th><th>Purchases</th><th>Payments</th><th>Outstanding balance</th><th><span className="sr-only">Actions</span></th></tr></thead>
         <tbody>{suppliers.map((supplier) => <tr key={supplier.id}>
           <td><button className="fabric-link" onClick={() => onOpen(supplier)}><strong>{supplier.name}</strong><span>{supplier.code}</span></button></td>
-          <td>{supplier.phone}{supplier.contactName ? <><br /><span className="cell-muted">{supplier.contactName}</span></> : null}</td>
+          <td><strong className="party-contact">{supplier.phone || "—"}</strong>{supplier.contactName && <small className="party-secondary">{supplier.contactName}</small>}</td>
           <td>{supplier.purchaseCount}</td>
           <td>{supplier.paymentCount}</td>
-          <td><strong>{formatMoney(supplier.outstandingMinor)}</strong></td>
+          <td><span className={`party-balance ${supplier.outstandingMinor > 0 ? "due" : supplier.outstandingMinor < 0 ? "credit" : "clear"}`}>{formatMoney(supplier.outstandingMinor)}</span><small className="party-secondary">{supplier.outstandingMinor > 0 ? "Due to supplier" : supplier.outstandingMinor < 0 ? "Advance with supplier" : "Balanced"}</small></td>
           <td><Button type="button" variant="outline" size="sm" onClick={() => onOpen(supplier)}>View account</Button></td>
         </tr>)}</tbody>
       </table>
@@ -117,16 +117,16 @@ export function SupplierTable({ suppliers, onOpen }: { suppliers: Supplier[]; on
 export function CustomerTable({ customers, onOpen }: { customers: Customer[]; onOpen: (customer: Customer) => void }) {
   if (customers.length === 0) return <EmptyState title="No customers found" copy="Add a customer to track credit sales, receipts and statements." />;
   return (
-    <div className="table-wrap">
+    <div className="table-wrap party-table">
       <table>
         <thead><tr><th>Customer</th><th>Phone</th><th>Sales</th><th>Receipts</th><th>Credit limit</th><th>Outstanding</th><th><span className="sr-only">Actions</span></th></tr></thead>
         <tbody>{customers.map((customer) => <tr key={customer.id}>
           <td><button className="fabric-link" onClick={() => onOpen(customer)}><strong>{customer.name}</strong><span>{customer.code}</span></button></td>
-          <td>{customer.phone || "—"}</td>
+          <td><strong className="party-contact">{customer.phone || "—"}</strong></td>
           <td>{customer.salesCount}</td>
           <td>{customer.receiptCount}</td>
           <td>{formatMoney(customer.creditLimitMinor)}</td>
-          <td><strong>{formatMoney(customer.outstandingMinor)}</strong></td>
+          <td><span className={`party-balance ${customer.outstandingMinor > 0 ? "due" : customer.outstandingMinor < 0 ? "credit" : "clear"}`}>{formatMoney(customer.outstandingMinor)}</span><small className="party-secondary">{customer.outstandingMinor > 0 ? "Due from customer" : customer.outstandingMinor < 0 ? "Customer advance" : "Balanced"}</small></td>
           <td><Button type="button" variant="outline" size="sm" onClick={() => onOpen(customer)}>View account</Button></td>
         </tr>)}</tbody>
       </table>
