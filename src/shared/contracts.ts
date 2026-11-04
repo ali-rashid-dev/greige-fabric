@@ -79,6 +79,7 @@ export const stockAdjustmentSchema = z.object({
 
 export const openingStockSchema = z.object({
   fabricId: z.string().uuid(),
+  supplierId: z.string().uuid().optional(),
   quantityMeters: z.number().finite().positive().max(1_000_000)
     .refine((value) => hasPrecision(value, 1000), "Use up to 3 decimal places"),
   unitCost: z.number().finite().nonnegative().max(1_000_000_000)

@@ -22,6 +22,8 @@ interface MovementRow {
   name: string;
   quantity_mm: number;
   movement_type: InventoryMovement["movementType"];
+  supplier_code: string | null;
+  supplier_name: string | null;
   reference: string;
   reason: string;
   authorized_user: string;
@@ -49,6 +51,7 @@ export class InventoryService {
     const transaction = this.database.transaction(() => {
       const movementId = this.postMovement({
         fabricId: input.fabricId,
+        supplierId: input.supplierId,
         quantityMm,
         type: "opening",
         reference: input.reference,
@@ -113,6 +116,7 @@ export class InventoryService {
 
   postMovement(input: {
     fabricId: string;
+    supplierId?: string;
     quantityMm: number;
     type: InventoryMovement["movementType"];
     reference: string;
@@ -156,10 +160,10 @@ export class InventoryService {
     const movementId = randomUUID();
     this.database.prepare(`
       INSERT INTO stock_movements (
-        id, fabric_id, quantity_mm, reason, created_at, movement_type, reference, authorized_user
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        id, fabric_id, supplier_id, quantity_mm, reason, created_at, movement_type, reference, authorized_user
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
-      movementId, input.fabricId, input.quantityMm, input.reason, input.createdAt,
+      movementId, input.fabricId, input.supplierId ?? null, input.quantityMm, input.reason, input.createdAt,
       input.type, input.reference, input.authorizedUser,
     );
     return movementId;
@@ -201,9 +205,11 @@ export class InventoryService {
   movements(): InventoryMovement[] {
     const rows = this.database.prepare(`
       SELECT m.id, m.fabric_id, f.sku, f.name, m.quantity_mm, m.movement_type,
+             s.code AS supplier_code, s.name AS supplier_name,
              m.reference, m.reason, m.authorized_user, m.created_at
       FROM stock_movements m
       JOIN fabrics f ON f.id = m.fabric_id
+      LEFT JOIN suppliers s ON s.id = m.supplier_id
       ORDER BY m.created_at DESC, m.rowid DESC
     `).all() as MovementRow[];
     return rows.map((row) => ({
@@ -211,6 +217,8 @@ export class InventoryService {
       fabricId: row.fabric_id,
       sku: row.sku,
       fabricName: row.name,
+      supplierCode: row.supplier_code ?? undefined,
+      supplierName: row.supplier_name ?? undefined,
       quantityMm: row.quantity_mm,
       movementType: row.movement_type,
       reference: row.reference,

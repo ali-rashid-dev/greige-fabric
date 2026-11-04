@@ -174,10 +174,6 @@ export default function ReturnsManagement() {
       {loading && !data && <p className="empty-state" role="status">Loading returns &amp; audit…</p>}
       {error && <div className="error-banner" role="alert">{error}</div>}
       {notice && <div className="notice" role="status">{notice}</div>}
-      <button type="button" className="secondary-button" disabled={loading} onClick={() => void loadData()}>
-        {loading ? "Loading…" : "Reload returns & audit"}
-      </button>
-
       {data && (
         <>
           <div className="panel-toolbar expense-tabs" role="tablist" aria-label="Return type">

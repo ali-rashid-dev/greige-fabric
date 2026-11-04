@@ -188,6 +188,8 @@ export interface InventoryMovement {
   fabricId: string;
   sku: string;
   fabricName: string;
+  supplierCode?: string;
+  supplierName?: string;
   quantityMm: number;
   movementType: "opening" | "adjustment" | "purchase" | "sale" | "sales_return" | "purchase_return" | "return_reversal";
   reference: string;

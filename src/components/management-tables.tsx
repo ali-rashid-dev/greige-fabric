@@ -61,12 +61,13 @@ export function MovementTable({ movements }: { movements: InventoryMovement[] })
   return (
     <div className="table-wrap">
       <table>
-        <thead><tr><th>Date</th><th>Fabric</th><th>Type</th><th>Quantity</th><th>Reference / reason</th><th>Recorded by</th></tr></thead>
+        <thead><tr><th>Date</th><th>Fabric</th><th>Type</th><th>Quantity</th><th>Supplier</th><th>Reference / reason</th><th>Recorded by</th></tr></thead>
         <tbody>{movements.map((movement) => <tr key={movement.id}>
           <td>{formatDate(movement.createdAt)}</td>
           <td><strong>{movement.sku}</strong><br /><span className="cell-muted">{movement.fabricName}</span></td>
           <td className="capitalize">{movement.movementType}</td>
           <td className={movement.quantityMm < 0 ? "movement-negative" : "movement-positive"}>{movement.quantityMm > 0 ? "+" : ""}{formatMeters(movement.quantityMm)}</td>
+          <td>{movement.supplierName ? <><strong>{movement.supplierCode}</strong><br /><span className="cell-muted">{movement.supplierName}</span></> : "—"}</td>
           <td><strong>{movement.reference}</strong><br /><span className="cell-muted">{movement.reason}</span></td>
           <td>{movement.authorizedUser}</td>
         </tr>)}</tbody>

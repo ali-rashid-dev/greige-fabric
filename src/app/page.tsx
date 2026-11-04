@@ -79,7 +79,7 @@ function getLocalDateInputValue(): string {
 }
 
 function generateEntityCode(prefix: string): string {
-  return `${prefix}-${crypto.randomUUID().toUpperCase()}`;
+  return `${prefix}-${crypto.randomUUID().slice(0, 8).toUpperCase()}`;
 }
 
 function toFormValues(fabric: Fabric): FabricFormValues {
@@ -122,11 +122,13 @@ export default function Home() {
   const [openingStockOpen, setOpeningStockOpen] = useState(false);
   const [openingValues, setOpeningValues] = useState({
     fabricId: "",
+    supplierId: "",
     quantityMeters: "",
     unitCost: "",
     reference: "",
     reason: "",
   });
+  const [openingReason, setOpeningReason] = useState("");
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [supplierDetails, setSupplierDetails] = useState<SupplierDetails | null>(null);
   const [supplierSearch, setSupplierSearch] = useState("");
@@ -449,6 +451,7 @@ export default function Home() {
     try {
       const result = await getDesktopApi().inventory.opening({
         fabricId: openingValues.fabricId,
+        supplierId: openingValues.supplierId || undefined,
         quantityMeters: Number(openingValues.quantityMeters),
         unitCost: Number(openingValues.unitCost),
         reference: openingValues.reference,
@@ -457,7 +460,8 @@ export default function Home() {
       if (!result.ok) throw new Error(result.error.message);
       await Promise.all([refreshCatalog(), refreshManagement()]);
       setOpeningStockOpen(false);
-      setOpeningValues({ fabricId: "", quantityMeters: "", unitCost: "", reference: "", reason: "" });
+      setOpeningValues({ fabricId: "", supplierId: "", quantityMeters: "", unitCost: "", reference: "", reason: "" });
+      setOpeningReason("");
       setNotice("Opening stock and inventory value recorded.");
     } catch (openingError) {
       setError(openingError instanceof Error ? openingError.message : "Unable to record opening stock.");
@@ -923,7 +927,8 @@ export default function Home() {
           {section === "stock" && (
             <div className="topbar-actions">
               <button className="primary-button" onClick={() => {
-                setOpeningValues({ fabricId: "", quantityMeters: "", unitCost: "", reference: "", reason: "" });
+                setOpeningValues({ fabricId: "", supplierId: "", quantityMeters: "", unitCost: "", reference: generateEntityCode("OPEN"), reason: "" });
+                setOpeningReason("");
                 setOpeningStockOpen(true);
               }}><span>+</span> Opening stock</button>
             </div>
@@ -1384,10 +1389,35 @@ export default function Home() {
                 {(stock?.fabrics ?? []).filter((fabric) => fabric.active).map((fabric) => <option key={fabric.id} value={fabric.id}>{fabric.sku} · {fabric.name}</option>)}
               </select>
             </FormField>
+            <FormField label="Supplier">
+              <select value={openingValues.supplierId} onChange={(event) => setOpeningValues({ ...openingValues, supplierId: event.target.value })}>
+                <option value="">No supplier</option>
+                {suppliers.filter((supplier) => supplier.active).map((supplier) => (
+                  <option key={supplier.id} value={supplier.id}>{supplier.code} · {supplier.name}</option>
+                ))}
+              </select>
+            </FormField>
             <FormField label="Quantity" required><div className="input-suffix"><input required type="number" min="0.001" step="0.001" value={openingValues.quantityMeters} onChange={(event) => setOpeningValues({ ...openingValues, quantityMeters: event.target.value })} /><span>m</span></div></FormField>
             <FormField label="Purchase cost" required><div className="input-prefix"><span>PKR</span><input required type="number" min="0" step="0.01" value={openingValues.unitCost} onChange={(event) => setOpeningValues({ ...openingValues, unitCost: event.target.value })} /></div></FormField>
             <FormField label="Reference" required><input required maxLength={100} value={openingValues.reference} onChange={(event) => setOpeningValues({ ...openingValues, reference: event.target.value })} placeholder="Opening stock entry" /></FormField>
-            <FormField label="Reason" required><input required maxLength={160} value={openingValues.reason} onChange={(event) => setOpeningValues({ ...openingValues, reason: event.target.value })} /></FormField>
+            <FormField label="Reason" required>
+              <select required value={openingReason} onChange={(event) => {
+                const reason = event.target.value;
+                setOpeningReason(reason);
+                setOpeningValues({ ...openingValues, reason: reason === "Other" ? "" : reason });
+              }}>
+                <option value="">Select reason</option>
+                <option value="Opening balance">Opening balance</option>
+                <option value="Stocktake correction">Stocktake correction</option>
+                <option value="Data migration">Data migration</option>
+                <option value="Other">Other</option>
+              </select>
+            </FormField>
+            {openingReason === "Other" && (
+              <FormField label="Reason details" required>
+                <input required maxLength={160} value={openingValues.reason} onChange={(event) => setOpeningValues({ ...openingValues, reason: event.target.value })} />
+              </FormField>
+            )}
             <div className="modal-actions"><button className="secondary-button" type="button" onClick={() => setOpeningStockOpen(false)}>Cancel</button><button className="primary-button" disabled={saving}>{saving ? "Saving…" : "Record stock"}</button></div>
           </form>
         </Modal>

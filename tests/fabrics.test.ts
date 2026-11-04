@@ -80,6 +80,38 @@ const sampleFabric = {
 };
 
 describe("fabric quality catalog", () => {
+  it("records the selected supplier on opening-stock movements", async () => {
+    const { service, inventory, suppliers, close } = await createService();
+    try {
+      const fabric = service.create(fabricInputSchema.parse(sampleFabric));
+      const supplier = suppliers.create({
+        code: "SUP-OPENING",
+        name: "Opening Stock Supplier",
+        phone: "123456789",
+        address: "",
+        contactName: "",
+        email: "",
+        openingBalance: 0,
+      }, "Owner");
+
+      inventory.openStock({
+        fabricId: fabric.id,
+        supplierId: supplier.id,
+        quantityMeters: 10,
+        unitCost: 145,
+        reference: "OPEN-0001",
+        reason: "Opening balance",
+      }, "Owner");
+
+      expect(inventory.movements()[0]).toMatchObject({
+        supplierCode: supplier.code,
+        supplierName: supplier.name,
+      });
+    } finally {
+      close();
+    }
+  });
+
   it("returns saleable fabric against the original invoice with bounded quantity and balanced reversal", async () => {
     const { database, service, inventory, customers, returns, accounting, close } = await createService();
     vi.useFakeTimers();
