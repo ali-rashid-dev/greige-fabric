@@ -64,11 +64,11 @@ async function createMainWindow(): Promise<void> {
   const rendererPath = getRendererPath();
   const productionFileUrl = pathToFileURL(rendererPath).href;
   mainWindow = new BrowserWindow({
-    width: 1180,
-    height: 820,
+    width: 1400,
+    height: 900,
     minWidth: 780,
     minHeight: 600,
-    icon: path.join(app.getAppPath(), "build/icon.png"),
+    icon: path.join(__dirname, "../assets/icon.png"),
     title: "Greige Fabric POS",
     backgroundColor: "#f7f7f5",
     webPreferences: {

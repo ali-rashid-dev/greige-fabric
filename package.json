@@ -56,13 +56,14 @@
     "npmRebuild": true,
     "nativeRebuilder": "sequential",
     "directories": {
-      "output": "release"
+      "output": "release",
+      "buildResources": "assets"
     },
     "files": [
       "dist-electron/**/*",
       "out/**/*",
       "package.json",
-      "build/icon.png"
+      "assets/icon.png"
     ],
     "extraResources": [
       {
@@ -74,7 +75,7 @@
       }
     ],
     "win": {
-      "icon": "build/icon.png",
+      "icon": "icon.ico",
       "target": [
         {
           "target": "nsis",
@@ -93,14 +94,14 @@
       "createStartMenuShortcut": true
     },
     "mac": {
-      "icon": "build/icon.png",
+      "icon": "icon.icns",
       "target": [
         "dmg"
       ],
       "category": "public.app-category.productivity"
     },
     "linux": {
-      "icon": "build/icon.png",
+      "icon": "icon.png",
       "target": [
         "AppImage",
         "deb"
